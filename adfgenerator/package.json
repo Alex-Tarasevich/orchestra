@@ -1,0 +1,19 @@
+{
+  "name": "adfgenerator",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@atlaskit/adf-schema": "^51.1.2",
+    "@atlaskit/editor-json-transformer": "^8.29.1",
+    "@atlaskit/editor-markdown-transformer": "^5.18.1",
+    "express": "^5.1.0"
+  }
+}

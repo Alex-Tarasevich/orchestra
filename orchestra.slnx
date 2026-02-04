@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="Orchestra.ApiService/Orchestra.ApiService.csproj" />
+  <Project Path="Orchestra.AppHost/Orchestra.AppHost.csproj" />
+  <Project Path="Orchestra.Application/Orchestra.Application.csproj" />
+  <Project Path="Orchestra.Domain/Orchestra.Domain.csproj" />
+  <Project Path="Orchestra.Infrastructure/Orchestra.Infrastructure.csproj" />
+  <Project Path="Orchestra.ServiceDefaults/Orchestra.ServiceDefaults.csproj" />
+  <Project Path="Orchestra.Worker/Orchestra.Worker.csproj" />
+</Solution>

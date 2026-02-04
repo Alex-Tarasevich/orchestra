@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>4f88e746-e7f1-4f1d-bba0-17b09bb4f216</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.2" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Orchestra.ServiceDefaults\Orchestra.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\Orchestra.Domain\Orchestra.Domain.csproj" />
+    <ProjectReference Include="..\Orchestra.Infrastructure\Orchestra.Infrastructure.csproj" />
+    <ProjectReference Include="..\Orchestra.Application\Orchestra.Application.csproj" />
+  </ItemGroup>
+
+</Project>

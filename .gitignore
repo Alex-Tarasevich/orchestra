@@ -1,0 +1,84 @@
+# .NET, C#, Visual Studio
+# Build results
+[Bb]in/
+[Oo]bj/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Mono Auto Generated Files
+mono_crash.*
+
+# Windows image file caches
+Thumbs.db
+*.DS_Store
+
+# Visual Studio Code
+.vscode/
+
+# Rider
+.idea/
+*.sln.iml
+
+# Visual Studio
+.vs/
+
+# NuGet
+*.nupkg
+# The packages folder can be ignored because of Package Restore
+**/packages/*
+# except build/, which is used as an MSBuild target.
+!**/packages/build/
+# Uncomment if necessary: # NuGet v3's project.json files produces this folder
+#**/.nuget/
+
+# ASP.NET Scaffolding
+ScaffoldingReadMe.txt
+
+# Azure Web App publish settings
+*.PublishSettings
+
+# Local configuration files
+appsettings.Development.json
+secrets.json
+
+# Logs
+*.log
+
+# Others
+*.dbmdl
+*.bak
+*.backup
+*.mdf
+*.ldf
+*.ndf
+
+# Resharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+
+# DotCover
+dotCover/
+
+# NCrunch
+.ncrunch*
+*crunch*.local.xml
+
+# User-specific files (MonoDevelop/Xamarin Studio)
+*.userprefs
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# spec-workflow files
+requirements/
+
+# End of file

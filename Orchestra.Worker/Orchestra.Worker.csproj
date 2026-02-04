@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-Orchestra.Worker-3c10ae66-4311-4500-8221-24994828bd27</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Orchestra.ServiceDefaults\Orchestra.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\Orchestra.Domain\Orchestra.Domain.csproj" />
+    <ProjectReference Include="..\Orchestra.Infrastructure\Orchestra.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

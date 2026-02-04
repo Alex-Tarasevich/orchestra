@@ -1,0 +1,6 @@
+@Orchestra.ApiService_HostAddress = http://localhost:5075
+
+GET {{Orchestra.ApiService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

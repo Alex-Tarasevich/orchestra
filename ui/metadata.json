@@ -1,0 +1,5 @@
+{
+  "name": "Orchestra",
+  "description": "A unified system to integrate trackers, knowledge bases, and code sources with AI teammates, workflow automation, and job management following AG UI protocols.",
+  "requestFramePermissions": []
+}
