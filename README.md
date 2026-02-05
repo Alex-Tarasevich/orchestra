@@ -80,7 +80,7 @@ Have ideas? [Open an issue](https://github.com/arturhaikou/orchestra/issues) or 
 
 *   **[.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)** (Preview)
 *   **[.NET Aspire](https://aspire.dev)** workload
-*   **[Docker Desktop](https://www.docker.com/products/docker-desktop)** (Required for Aspire & PostgreSQL containers)
+*   **[Docker](https://www.docker.com/) or [Podman](https://podman.io/)** (Required for Aspire & PostgreSQL containers)
 *   **[Node.js](https://nodejs.org/)** (v22+)
 *   Access to an **Azure OpenAI** resource (Deployment name and Endpoint)
 
