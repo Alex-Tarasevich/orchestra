@@ -114,3 +114,16 @@ Have ideas? [Open an issue](https://github.com/arturhaikou/orchestra/issues) or 
     > `Endpoint={your-endpoint};Key={your-key}`
 
     From there, you can view logs, traces, and click the endpoint link for the **ui** project to access the Orchestra application.
+
+## UI
+
+### Create Integrations
+<img width="1456" height="932" alt="image" src="https://github.com/user-attachments/assets/44dce0dc-8cbd-4b06-8d1e-e742a7c47a86" />
+
+### View tickets
+<img width="1314" height="443" alt="image" src="https://github.com/user-attachments/assets/dccade8b-3c4f-4bd4-ac8c-8d0735be28e2" />
+
+### Create specific agent
+<img width="1028" height="870" alt="image" src="https://github.com/user-attachments/assets/a4d3f5de-d0b6-49c2-b608-35f97ed2f2ca" />
+
+
