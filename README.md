@@ -88,7 +88,7 @@ Have ideas? [Open an issue](https://github.com/arturhaikou/orchestra/issues) or 
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/your-org/orchestra.git
+    git clone https://github.com/arturhaikou/orchestra.git
     cd orchestra
     ```
 
