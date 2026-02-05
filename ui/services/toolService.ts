@@ -1,7 +1,6 @@
 
 import { Tool } from '../types';
 import { getToken } from './authService';
-import { MOCK_TOOLS } from '../constants';
 
 // Map providerType to icon name
 const getIconForProviderType = (providerType: string): string => {
@@ -52,8 +51,7 @@ export const getTools = async (workspaceId: string): Promise<Tool[]> => {
     
     return tools;
   } catch (error) {
-    return new Promise((resolve) => {
-      setTimeout(() => resolve(MOCK_TOOLS), 300);
-    });
+    console.error('Failed to fetch tools:', error);
+    return [];
   }
 };

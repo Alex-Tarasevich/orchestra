@@ -1,7 +1,6 @@
 
 import { Workspace } from '../types';
-import { MOCK_WORKSPACES } from '../constants';
-import { getToken, getUser } from './authService';
+import { getToken } from './authService';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL}/v1/workspaces`;
 
@@ -24,28 +23,8 @@ export const getWorkspaces = async (): Promise<Workspace[]> => {
     }
     return await response.json();
   } catch (error) {
-    // console.warn("Backend API not reachable. Falling back to mock data for workspaces.", error);
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const user = getUser();
-        if (user) {
-          if (user.id === 'u-no-ws') {
-            resolve([]);
-            return;
-          }
-          if (user.id === 'u-ws-empty') {
-            resolve([{ id: 'ws-empty', name: 'My First Workspace' }]);
-            return;
-          }
-          if (user.id === 'u-full') {
-             resolve(MOCK_WORKSPACES);
-             return;
-          }
-        }
-        // Default fallback
-        resolve(MOCK_WORKSPACES);
-      }, 300);
-    });
+    console.error('Failed to fetch workspaces:', error);
+    return [];
   }
 };
 
@@ -66,15 +45,8 @@ export const createWorkspace = async (name: string): Promise<Workspace> => {
 
     return await response.json();
   } catch (error) {
-    // console.warn("Backend API not reachable. Falling back to mock creation.", error);
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          id: `ws-${Date.now()}`,
-          name: name
-        });
-      }, 400);
-    });
+    console.error('Failed to create workspace:', error);
+    throw error;
   }
 };
 
@@ -89,11 +61,8 @@ export const updateWorkspace = async (id: string, name: string): Promise<Workspa
     if (!response.ok) throw new Error(`Backend error: ${response.statusText}`);
     return await response.json();
   } catch (error) {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({ id, name });
-      }, 400);
-    });
+    console.error('Failed to update workspace:', error);
+    throw error;
   }
 };
 
@@ -106,10 +75,7 @@ export const deleteWorkspace = async (id: string): Promise<void> => {
 
     if (!response.ok) throw new Error(`Backend error: ${response.statusText}`);
   } catch (error) {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve();
-      }, 400);
-    });
+    console.error('Failed to delete workspace:', error);
+    throw error;
   }
 };

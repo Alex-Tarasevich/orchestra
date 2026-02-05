@@ -56,6 +56,24 @@ Orchestra connects several microservices using **.NET Aspire**:
 
 ---
 
+## 🗺️ Roadmap
+
+We're actively developing Orchestra to make AI-driven development even more powerful. Here's what's coming next:
+
+- **🔄 Workflows:** Advanced workflow orchestration with custom triggers, conditions, and agent handoffs
+- **🔌 More Integrations:** Expand beyond Jira to support Linear, Trello, GitHub Issues, and more tracking platforms
+- **🛠️ Built-in Tools:** Pre-configured tool library including Git operations, code analysis, testing frameworks, and deployment utilities
+- **📋 Workspace Duplication:** Clone agents, tools, and integrations across workspaces for rapid environment setup
+- **🤖 Agent Templates:** Pre-built agent configurations for common development scenarios
+- **🧠 Multiple AI Provider Support:** Integration with Ollama, AWS Bedrock, Anthropic Claude, Google Gemini, and other AI providers beyond Azure OpenAI
+- **📊 Analytics & Insights:** Track agent performance, ticket resolution times, and productivity metrics
+- **🔐 Enterprise Features:** Enhanced security, audit logs, and compliance controls
+- **🔍 Vectorization:** Implement vector embeddings and semantic search for knowledge base integrations to enable RAG and enhanced AI agent retrieval.
+
+Have ideas? [Open an issue](https://github.com/arturhaikou/orchestra/issues) or contribute!
+
+---
+
 ## 📦 Getting Started
 
 ### Prerequisites

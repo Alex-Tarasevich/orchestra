@@ -1,7 +1,6 @@
 
 import { Integration, IntegrationType } from '../types';
 import { getToken } from './authService';
-import { MOCK_INTEGRATIONS } from '../constants';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL}/v1/integrations`;
 
@@ -33,11 +32,8 @@ export const getIntegrations = async (workspaceId: string): Promise<Integration[
     if (!response.ok) throw new Error("API Error");
     return await response.json();
   } catch (error) {
-    return new Promise((resolve) => {
-        setTimeout(() => {
-            resolve(MOCK_INTEGRATIONS.filter(i => i.workspaceId === workspaceId));
-        }, 300);
-    });
+    console.error('Failed to fetch integrations:', error);
+    return [];
   }
 };
 
@@ -58,24 +54,8 @@ export const createIntegration = async (data: CreateIntegrationDTO): Promise<Int
 
     return await response.json();
   } catch (error) {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          id: Math.random().toString(36).substr(2, 9),
-          workspaceId: data.workspaceId, 
-          name: data.name,
-          type: data.type,
-          icon: data.provider,
-          url: data.url,
-          provider: data.provider,
-          username: data.username,
-          connected: true,
-          lastSync: 'Just now',
-          filterQuery: data.filterQuery,
-          vectorize: data.vectorize
-        });
-      }, 500);
-    });
+    console.error('Failed to create integration:', error);
+    throw error;
   }
 };
 
@@ -93,24 +73,8 @@ export const updateIntegration = async (id: string, data: IntegrationDTO): Promi
 
     return await response.json();
   } catch (error) {
-    return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve({
-            id: id,
-            workspaceId: 'ws-1',
-            name: data.name,
-            type: data.type,
-            icon: data.provider,
-            url: data.url,
-            provider: data.provider,
-            username: data.username,
-            connected: true,
-            lastSync: 'Just now',
-            filterQuery: data.filterQuery,
-            vectorize: data.vectorize
-          } as Integration);
-        }, 500);
-      });
+    console.error('Failed to update integration:', error);
+    throw error;
   }
 };
 
@@ -125,10 +89,7 @@ export const deleteIntegration = async (id: string): Promise<void> => {
       throw new Error(`Backend error: ${response.statusText}`);
     }
   } catch (error) {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve();
-      }, 500);
-    });
+    console.error('Failed to delete integration:', error);
+    throw error;
   }
 };

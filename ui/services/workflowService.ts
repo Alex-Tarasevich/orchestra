@@ -1,6 +1,5 @@
 
 import { Workflow } from '../types';
-import { MOCK_WORKFLOWS } from '../constants';
 import { getToken } from './authService';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL}/v1/workflows`;
@@ -24,12 +23,8 @@ export const getWorkspacesWorkflows = async (workspaceId: string): Promise<Workf
     }
     return await response.json();
   } catch (error) {
-    // Mock fallback
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve(MOCK_WORKFLOWS.filter(w => w.workspaceId === workspaceId));
-      }, 300);
-    });
+    console.error('Failed to fetch workflows:', error);
+    return [];
   }
 };
 
@@ -50,18 +45,8 @@ export const createWorkflow = async (workspaceId: string, data: { name: string; 
 
     return await response.json();
   } catch (error) {
-    // Mock fallback
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          id: `wf-${Date.now()}`,
-          workspaceId,
-          name: data.name,
-          nodes: data.nodes,
-          edges: data.edges
-        });
-      }, 500);
-    });
+    console.error('Failed to create workflow:', error);
+    throw error;
   }
 };
 
@@ -82,16 +67,8 @@ export const updateWorkflow = async (id: string, data: Partial<Workflow>): Promi
 
     return await response.json();
   } catch (error) {
-    // Mock fallback
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const mockWorkflow = MOCK_WORKFLOWS.find(w => w.id === id);
-        resolve({
-          ...(mockWorkflow || { id, workspaceId: 'ws-1', name: '', nodes: [], edges: [] }),
-          ...data
-        });
-      }, 500);
-    });
+    console.error('Failed to update workflow:', error);
+    throw error;
   }
 };
 
@@ -106,11 +83,7 @@ export const deleteWorkflow = async (id: string): Promise<void> => {
       throw new Error(`Backend error: ${response.statusText}`);
     }
   } catch (error) {
-    // Mock fallback
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve();
-      }, 500);
-    });
+    console.error('Failed to delete workflow:', error);
+    throw error;
   }
 };

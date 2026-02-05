@@ -1,7 +1,6 @@
 
 import { Comment, Ticket, TicketPriority, TicketStatus, PaginatedResponse } from '../types';
 import { getToken } from './authService';
-import { MOCK_TICKETS } from '../constants';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL}/v1/tickets`;
 
@@ -19,13 +18,8 @@ export const getTicketStatuses = async (): Promise<TicketStatus[]> => {
     if (!response.ok) throw new Error("API Error");
     return await response.json();
   } catch (error) {
-    // Mock fallback
-    return [
-      { id: '1', name: 'New', color: 'bg-blue-500/20 text-blue-400' },
-      { id: '2', name: 'To Do', color: 'bg-purple-500/20 text-purple-400' },
-      { id: '3', name: 'InProgress', color: 'bg-yellow-500/20 text-yellow-400' },
-      { id: '4', name: 'Completed', color: 'bg-emerald-500/20 text-emerald-400' }
-    ];
+    console.error('Failed to fetch ticket statuses:', error);
+    return [];
   }
 };
 
@@ -38,13 +32,8 @@ export const getTicketPriorities = async (): Promise<TicketPriority[]> => {
     if (!response.ok) throw new Error("API Error");
     return await response.json();
   } catch (error) {
-    // Mock fallback
-    return [
-      { id: '1', name: 'Low', color: 'bg-slate-500/10 text-slate-400 border border-slate-500/20', value: 1 },
-      { id: '2', name: 'Medium', color: 'bg-blue-500/10 text-blue-400 border border-blue-500/20', value: 2 },
-      { id: '3', name: 'High', color: 'bg-orange-500/10 text-orange-400 border border-orange-500/20', value: 3 },
-      { id: '4', name: 'Critical', color: 'bg-red-500/10 text-red-400 border border-red-500/20', value: 4 }
-    ];
+    console.error('Failed to fetch ticket priorities:', error);
+    return [];
   }
 };
 
@@ -62,26 +51,13 @@ export const getTickets = async (workspaceId: string, pageToken?: string, pageSi
     if (!response.ok) throw new Error("API Error");
     return await response.json();
   } catch (error) {
-    // Mocking pagination behavior
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const allWorkspaceTickets = MOCK_TICKETS.filter(t => t.workspaceId === workspaceId);
-        
-        // Simple mock pagination logic
-        const startIdx = pageToken ? parseInt(pageToken, 10) : 0;
-        const endIdx = startIdx + pageSize;
-        const pageItems = allWorkspaceTickets.slice(startIdx, endIdx);
-        const isLast = endIdx >= allWorkspaceTickets.length;
-        const nextToken = isLast ? undefined : endIdx.toString();
-
-        resolve({
-          items: pageItems,
-          nextPageToken: nextToken,
-          isLast: isLast,
-          totalCount: allWorkspaceTickets.length
-        });
-      }, 400);
-    });
+    console.error('Failed to fetch tickets:', error);
+    return {
+      items: [],
+      nextPageToken: undefined,
+      isLast: true,
+      totalCount: 0
+    };
   }
 };
 
@@ -102,21 +78,8 @@ export const addComment = async (ticketId: string, content: string, author: stri
 
     return await response.json();
   } catch (error) {
-    // Mock fallback for demo purposes
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const now = new Date();
-        // Format: YYYY-MM-DD HH:MM
-        const timestamp = now.toISOString().slice(0, 16).replace('T', ' ');
-        
-        resolve({
-          id: `c-${Date.now()}`,
-          author: author,
-          content: content,
-          timestamp: timestamp
-        });
-      }, 300);
-    });
+    console.error('Failed to add comment:', error);
+    throw error;
   }
 };
 
@@ -153,25 +116,8 @@ export const createTicket = async (workspaceId: string, data: { title: string; d
 
     return await response.json();
   } catch (error) {
-    // Mock fallback
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          id: `T-${Math.floor(Math.random() * 9000) + 1000}`,
-          workspaceId,
-          source: 'INTERNAL',
-          internal: true,
-          title: data.title,
-          description: data.description,
-          status: DEFAULT_STATUS,
-          priority: DEFAULT_PRIORITY,
-          satisfaction: 100, // Default for new internal tickets
-          assignedAgentId: data.assignedAgentId,
-          assignedWorkflowId: data.assignedWorkflowId,
-          comments: []
-        });
-      }, 500);
-    });
+    console.error('Failed to create ticket:', error);
+    throw error;
   }
 };
 
@@ -227,12 +173,8 @@ export const deleteTicket = async (ticketId: string): Promise<void> => {
       throw new Error(`Backend error: ${response.statusText}`);
     }
   } catch (error) {
-    // Mock fallback
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve();
-      }, 500);
-    });
+    console.error('Failed to delete ticket:', error);
+    throw error;
   }
 };
 

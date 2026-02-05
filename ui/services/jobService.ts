@@ -1,7 +1,6 @@
 
 import { Job } from '../types';
 import { getToken } from './authService';
-import { MOCK_JOBS } from '../constants';
 
 const API_BASE_URL = `${import.meta.env.VITE_API_URL}/v1/jobs`;
 
@@ -18,11 +17,8 @@ export const getJobs = async (workspaceId: string): Promise<Job[]> => {
     if (!response.ok) throw new Error("API Error");
     return await response.json();
   } catch (error) {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve(MOCK_JOBS.filter(j => j.workspaceId === workspaceId));
-      }, 300);
-    });
+    console.error('Failed to fetch jobs:', error);
+    return [];
   }
 };
 
@@ -36,24 +32,8 @@ export const triggerSync = async (workspaceId: string, integrationId: string): P
     if (!response.ok) throw new Error("API Error");
     return await response.json();
   } catch (error) {
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        resolve({
-          id: `JOB-SYNC-${Math.random().toString(36).substr(2, 5).toUpperCase()}`,
-          workspaceId,
-          integrationId,
-          status: 'IN_PROGRESS',
-          progress: 10,
-          type: 'SYNC',
-          logs: [
-            `[${new Date().toLocaleTimeString()}] Initializing connection to integration ${integrationId}...`,
-            `[${new Date().toLocaleTimeString()}] Authenticating with provider...`,
-            `[${new Date().toLocaleTimeString()}] Pulling remote delta...`
-          ],
-          startedAt: new Date().toISOString()
-        });
-      }, 500);
-    });
+    console.error('Failed to trigger sync:', error);
+    throw error;
   }
 };
 
