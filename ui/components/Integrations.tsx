@@ -41,7 +41,8 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
     username: '',
     apiKey: '',
     filterQuery: '',
-    vectorize: false
+    vectorize: false,
+    jiraType: 'Cloud'
   });
 
   const categories = [
@@ -51,14 +52,15 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
   ];
 
   const providers = [
-    { value: 'jira', label: 'Jira Cloud' },
-    { value: 'azure-devops', label: 'Azure DevOps' },
-    { value: 'linear', label: 'Linear' },
-    { value: 'github', label: 'GitHub' },
-    { value: 'gitlab', label: 'GitLab' },
+    { value: 'jira', label: 'Jira' },
     { value: 'confluence', label: 'Confluence' },
-    { value: 'notion', label: 'Notion' },
-    { value: 'custom', label: 'Custom' },
+    // Unsupported providers - pending backend implementation
+    // { value: 'azure-devops', label: 'Azure DevOps' },
+    // { value: 'linear', label: 'Linear' },
+    // { value: 'github', label: 'GitHub' },
+    // { value: 'gitlab', label: 'GitLab' },
+    // { value: 'notion', label: 'Notion' },
+    // { value: 'custom', label: 'Custom' },
   ];
 
   const getFilterConfig = (provider: string) => {
@@ -75,25 +77,26 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
           placeholder: 'e.g. type = "page" AND space = "ENG"',
           hint: 'Limit which pages are synced by providing a specific Confluence Query Language string.'
         };
-      case 'azure-devops':
-        return {
-          label: 'WIQL QUERY',
-          placeholder: 'SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = "Nexus"',
-          hint: 'Limit work items using Work Item Query Language.'
-        };
-      case 'github':
-      case 'gitlab':
-        return {
-          label: 'SEARCH FILTER',
-          placeholder: 'e.g. is:open label:bug',
-          hint: 'Limit items using standard provider search syntax.'
-        };
-      case 'notion':
-        return {
-          label: 'FILTER JSON',
-          placeholder: '{ "property": "Status", "select": { "equals": "Done" } }',
-          hint: 'Provide a valid Notion API filter object in JSON format.'
-        };
+      // Unsupported providers - pending backend implementation
+      // case 'azure-devops':
+      //   return {
+      //     label: 'WIQL QUERY',
+      //     placeholder: 'SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = "Nexus"',
+      //     hint: 'Limit work items using Work Item Query Language.'
+      //   };
+      // case 'github':
+      // case 'gitlab':
+      //   return {
+      //     label: 'SEARCH FILTER',
+      //     placeholder: 'e.g. is:open label:bug',
+      //     hint: 'Limit items using standard provider search syntax.'
+      //   };
+      // case 'notion':
+      //   return {
+      //     label: 'FILTER JSON',
+      //     placeholder: '{ "property": "Status", "select": { "equals": "Done" } }',
+      //     hint: 'Provide a valid Notion API filter object in JSON format.'
+      //   };
       default:
         return {
           label: 'QUERY FILTER',
@@ -114,7 +117,8 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
         username: integration.username || '',
         apiKey: '••••••••••••', // Masked for existing
         filterQuery: integration.filterQuery || '',
-        vectorize: integration.vectorize || false
+        vectorize: integration.vectorize || false,
+        jiraType: (integration as any).jiraType || 'Cloud'
       });
     } else {
       setEditingId(null);
@@ -126,7 +130,8 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
         username: '',
         apiKey: '',
         filterQuery: '',
-        vectorize: false
+        vectorize: false,
+        jiraType: 'Cloud'
       });
     }
     setIsModalOpen(true);
@@ -168,9 +173,10 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
   const renderIcon = (providerName: string) => {
     switch (providerName) {
       case 'jira': return <Layers className="w-5 h-5 text-indigo-500" />;
-      case 'github': return <GitBranch className="w-5 h-5 text-text" />;
       case 'confluence': return <Database className="w-5 h-5 text-blue-400" />;
-      case 'linear': return <Zap className="w-5 h-5 text-purple-500" />;
+      // Unsupported providers - pending backend implementation
+      // case 'github': return <GitBranch className="w-5 h-5 text-text" />;
+      // case 'linear': return <Zap className="w-5 h-5 text-purple-500" />;
       default: return <Globe className="w-5 h-5 text-zinc-600" />;
     }
   };
@@ -351,6 +357,28 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
                   required
                   />
               </div>
+
+              {formState.provider === 'jira' && (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-textMuted uppercase tracking-wider">Jira Instance Type</label>
+                  <div className="relative">
+                    <select 
+                      value={formState.jiraType} 
+                      onChange={(e) => setFormState({...formState, jiraType: e.target.value})}
+                      className="w-full bg-background border border-border rounded-lg pl-3 pr-10 py-2.5 text-sm text-text focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none transition-all shadow-sm"
+                    >
+                      <option value="Cloud">Jira Cloud</option>
+                      <option value="OnPremise">Jira On-Premise</option>
+                    </select>
+                    <Globe className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted pointer-events-none" />
+                  </div>
+                  <p className="text-[10px] text-textMuted ml-1">
+                    {formState.jiraType === 'Cloud' 
+                      ? 'For cloud.atlassian.net instances' 
+                      : 'For self-hosted or data center instances'}
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-1.5">
                   <label className="text-[10px] font-bold text-textMuted uppercase tracking-wider">Username / Email</label>

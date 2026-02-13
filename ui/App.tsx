@@ -12,6 +12,7 @@ import Login from './components/Login';
 import { Workspace, User } from './types';
 import { getWorkspaces, createWorkspace, updateWorkspace, deleteWorkspace } from './services/workspaceService';
 import { getToken, logout, getUser, updateUser, changePassword } from './services/authService';
+import { validatePassword } from './utils/passwordValidator';
 import { X, Loader2, AlertTriangle, Pencil, Save, Trash2, Mail, User as UserIcon, Lock, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -230,8 +231,11 @@ const App: React.FC = () => {
               setProfileError("New passwords do not match.");
               return;
           }
-          if (profileInput.newPassword.length < 6) {
-              setProfileError("New password must be at least 6 characters.");
+          
+          // Use the password validator utility
+          const passwordValidation = validatePassword(profileInput.newPassword);
+          if (!passwordValidation.isValid) {
+              setProfileError(passwordValidation.errors[0]); // Show first validation error
               return;
           }
       }
@@ -435,7 +439,7 @@ const App: React.FC = () => {
                           type={showPasswords ? "text" : "password"}
                           value={profileInput.newPassword}
                           onChange={(e) => setProfileInput({...profileInput, newPassword: e.target.value})}
-                          placeholder="Min 6 chars"
+                          placeholder="Min 8 chars, 1 uppercase, 1 digit, 1 special"
                           className="w-full bg-background border border-border rounded-md px-3 pl-10 py-2 text-sm text-text focus:outline-none focus:border-primary shadow-sm transition-all font-mono"
                           />
                       </div>

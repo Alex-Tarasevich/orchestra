@@ -94,6 +94,10 @@ public static class Extensions
 
         builder.Services.AddSingleton<ITicketMappingService, TicketMappingService>();
 
+        // Jira API client abstraction for version support (Cloud v3, On-Premise v2)
+        builder.Services.AddScoped<JiraApiClientFactory>();
+        builder.Services.AddScoped<IJiraTextContentConverter, JiraTextContentConverter>();
+
         // Ticket provider implementations
         builder.Services.AddScoped<JiraTicketProvider>();
 

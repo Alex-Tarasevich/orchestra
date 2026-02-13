@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Cpu, Loader2, Lock, Mail, User, Sun, Moon } from 'lucide-react';
 import { login, register } from '../services/authService';
+import { validatePassword } from '../utils/passwordValidator';
 
 interface LoginProps {
   onLogin: () => void;
@@ -31,6 +32,15 @@ const Login: React.FC<LoginProps> = ({ onLogin, isDarkMode, toggleTheme }) => {
       return;
     }
 
+    // Validate password for registration
+    if (isRegistering) {
+      const validation = validatePassword(password);
+      if (!validation.isValid) {
+        setError(validation.errors[0]); // Show first error
+        return;
+      }
+    }
+
     setIsLoading(true);
 
     try {
@@ -40,8 +50,8 @@ const Login: React.FC<LoginProps> = ({ onLogin, isDarkMode, toggleTheme }) => {
         await login(email, password);
       }
       onLogin();
-    } catch (err) {
-      setError('Authentication failed. Please check your credentials.');
+    } catch (err: any) {
+      setError(err.message || 'Authentication failed. Please check your credentials.');
     } finally {
       setIsLoading(false);
     }
@@ -130,7 +140,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, isDarkMode, toggleTheme }) => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full bg-background border border-border rounded-md pl-10 pr-3 py-2 text-sm text-text focus:outline-none focus:border-primary transition-colors placeholder:text-textMuted/50"
-                placeholder="••••••••"
+                placeholder={isRegistering ? "Min 8 chars, 1 uppercase, 1 digit, 1 special" : "••••••••"}
               />
             </div>
           </div>

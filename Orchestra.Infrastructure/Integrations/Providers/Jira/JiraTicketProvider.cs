@@ -1,11 +1,3 @@
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
-using System.Collections.Generic;
-using System.Net;
 using System.Web;
 using Microsoft.Extensions.Logging;
 using Orchestra.Application.Common.Interfaces;
@@ -14,68 +6,25 @@ using Orchestra.Application.Tickets.DTOs;
 using Orchestra.Domain.Entities;
 using Orchestra.Domain.Interfaces;
 using Orchestra.Infrastructure.Integrations.Providers.Jira.Models;
+using System.Text.Json;
+using System.Net;
 
 namespace Orchestra.Infrastructure.Integrations.Providers.Jira;
 
 public class JiraTicketProvider : ITicketProvider
 {
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly ICredentialEncryptionService _credentialEncryptionService;
+    private readonly JiraApiClientFactory _apiClientFactory;
     private readonly ILogger<JiraTicketProvider> _logger;
-    private readonly IAdfConversionService _adfConversionService;
+    private readonly IJiraTextContentConverter _contentConverter;
 
     public JiraTicketProvider(
-        IHttpClientFactory httpClientFactory,
-        ICredentialEncryptionService credentialEncryptionService,
+        JiraApiClientFactory apiClientFactory,
         ILogger<JiraTicketProvider> logger,
-        IAdfConversionService adfConversionService)
+        IJiraTextContentConverter contentConverter)
     {
-        _httpClientFactory = httpClientFactory;
-        _credentialEncryptionService = credentialEncryptionService;
+        _apiClientFactory = apiClientFactory;
         _logger = logger;
-        _adfConversionService = adfConversionService;
-    }
-
-    private HttpClient GetHttpClient(Integration integration)
-    {
-        try
-        {
-            var client = _httpClientFactory.CreateClient();
-
-            if (string.IsNullOrEmpty(integration.Url))
-            {
-                throw new ArgumentException("Integration URL is required for Jira API calls.", nameof(integration.Url));
-            }
-            
-            if (string.IsNullOrEmpty(integration.EncryptedApiKey))
-            {
-                throw new ArgumentException("Integration encrypted API key is required for Jira API calls.", nameof(integration.EncryptedApiKey));
-            }
-            
-            client.BaseAddress = new Uri(integration.Url);
-            
-            // Decrypt API key (format: "email:apiToken")
-            var apiKey = _credentialEncryptionService.Decrypt(integration.EncryptedApiKey);
-            
-            // Set Basic Auth header
-            var authValue = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{integration.Username}:{apiKey}"));
-            client.DefaultRequestHeaders.Authorization = 
-                new AuthenticationHeaderValue("Basic", authValue);
-            
-            return client;
-        }
-        catch (UriFormatException ex)
-        {
-            _logger.LogError(ex, "Invalid URL format for Jira integration '{IntegrationName}': '{Url}'", 
-                integration.Name, integration.Url);
-            throw new ArgumentException("Invalid integration URL format.", nameof(integration.Url), ex);
-        }
-        catch (Exception ex) when (ex is ArgumentException || ex is CryptographicException)
-        {
-            _logger.LogError(ex, "Failed to configure HttpClient for Jira integration '{IntegrationName}'", 
-                integration.Name);
-            throw;
-        }
+        _contentConverter = contentConverter;
     }
 
     public async Task<(List<ExternalTicketDto> Tickets, bool IsLast, string? NextPageToken)> 
@@ -86,7 +35,7 @@ public class JiraTicketProvider : ITicketProvider
             string? pageToken = null,
             CancellationToken cancellationToken = default)
     {
-        var client = GetHttpClient(integration);
+        var apiClient = _apiClientFactory.CreateClient(integration);
         var filter = integration.FilterQuery;
         var jql = !string.IsNullOrWhiteSpace(filter) 
             ? $"{filter} ORDER BY priority DESC, updated DESC" 
@@ -94,35 +43,20 @@ public class JiraTicketProvider : ITicketProvider
         
         try
         {
-            var query = HttpUtility.ParseQueryString(string.Empty);
-            query["jql"] = jql;
-            query["fields"] = "key,status,priority,summary,description,comment,created,updated";
-            query["startAt"] = startAt.ToString();
-            query["maxResults"] = maxResults.ToString();
-            
-            if (!string.IsNullOrWhiteSpace(pageToken))
-            {
-                query["nextPageToken"] = pageToken;
-            }
-            
-            var requestUrl = $"rest/api/3/search/jql?{query}";
-            
-            var response = await client.GetAsync(requestUrl, cancellationToken);
-            
-            var content = await response.Content.ReadAsStringAsync(cancellationToken);
-            response.EnsureSuccessStatusCode();
-            var searchResponse = JsonSerializer.Deserialize<JiraSearchResponse>(
-                content, 
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var fields = "key,status,priority,summary,description,comment,created,updated";
+            var searchResponse = await apiClient.SearchIssuesAsync(
+                jql,
+                fields,
+                startAt,
+                maxResults,
+                cancellationToken);
             
             if (searchResponse == null)
             {
                 _logger.LogWarning(
-                    "Jira search returned null response for integration {IntegrationName} (ID: {IntegrationId}), " +
-                    "URL={RequestUrl}",
+                    "Jira search returned null response for integration {IntegrationName} (ID: {IntegrationId})",
                     integration.Name,
-                    integration.Id,
-                    requestUrl);
+                    integration.Id);
                 return (new List<ExternalTicketDto>(), true, null);
             }
             
@@ -169,30 +103,21 @@ public class JiraTicketProvider : ITicketProvider
         string externalTicketId,
         CancellationToken cancellationToken = default)
     {
-        var client = GetHttpClient(integration);
+        var apiClient = _apiClientFactory.CreateClient(integration);
         var fields = "key,status,priority,summary,description,comment,created,updated";
         
         try
         {
-            var response = await client.GetAsync(
-                $"/rest/api/3/issue/{externalTicketId}?fields={fields}", 
-                cancellationToken);
+            var jiraTicket = await apiClient.GetIssueAsync(externalTicketId, fields, cancellationToken);
             
-            if (response.StatusCode == HttpStatusCode.NotFound)
+            if (jiraTicket == null)
             {
                 _logger.LogWarning("Jira ticket {TicketId} not found in integration {IntegrationId}",
                     externalTicketId, integration.Id);
                 return null;
             }
             
-            response.EnsureSuccessStatusCode();
-            
-            var content = await response.Content.ReadAsStringAsync(cancellationToken);
-            var jiraTicket = JsonSerializer.Deserialize<JiraTicket>(
-                content,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            
-            return jiraTicket == null ? null : await MapJiraTicketToDtoAsync(jiraTicket, integration, cancellationToken);
+            return await MapJiraTicketToDtoAsync(jiraTicket, integration, cancellationToken);
         }
         catch (HttpRequestException ex)
         {
@@ -209,29 +134,17 @@ public class JiraTicketProvider : ITicketProvider
         string author,
         CancellationToken cancellationToken = default)
     {
-        var client = GetHttpClient(integration);
+        var apiClient = _apiClientFactory.CreateClient(integration);
         
-        // Convert markdown to ADF using the conversion service
-        var adfBody = await _adfConversionService.ConvertMarkdownToAdfAsync(content, cancellationToken);
-        
-        var requestBody = new
-        {
-            body = adfBody
-        };
-        
-        var jsonContent = new StringContent(
-            JsonSerializer.Serialize(requestBody),
-            Encoding.UTF8,
-            "application/json");
+        // Convert markdown to appropriate format (ADF for Cloud, HTML for On-Premise)
+        var commentBody = await _contentConverter.ConvertMarkdownToCommentBodyAsync(
+            content, 
+            integration.JiraType.GetValueOrDefault(), 
+            cancellationToken);
         
         try
         {
-            var response = await client.PostAsync(
-                $"/rest/api/3/issue/{externalTicketId}/comment",
-                jsonContent,
-                cancellationToken);
-            
-            response.EnsureSuccessStatusCode();
+            await apiClient.AddCommentAsync(externalTicketId, commentBody, cancellationToken);
             
             return new CommentDto(
                 Guid.NewGuid().ToString(),
@@ -254,7 +167,7 @@ public class JiraTicketProvider : ITicketProvider
         string issueTypeName,
         CancellationToken cancellationToken = default)
     {
-        var client = GetHttpClient(integration);
+        var apiClient = _apiClientFactory.CreateClient(integration);
         
         try
         {
@@ -265,13 +178,16 @@ public class JiraTicketProvider : ITicketProvider
                 issueTypeName);
             
             // Step 1: Get project ID from filter query
-            var projectId = await GetProjectIdFromFilterQueryAsync(integration, cancellationToken);
+            var projectId = await GetProjectIdFromFilterQueryAsync(apiClient, integration, cancellationToken);
             
             // Step 2: Resolve issue type name to ID
-            var issueTypeId = await GetIssueTypeIdAsync(integration, issueTypeName, cancellationToken);
+            var issueTypeId = await GetIssueTypeIdAsync(apiClient, issueTypeName, cancellationToken);
             
-            // Step 3: Convert markdown description to ADF
-            var adfDescription = await _adfConversionService.ConvertMarkdownToAdfAsync(description, cancellationToken);
+            // Step 3: Convert markdown description to appropriate format
+            var descriptionBody = await _contentConverter.ConvertMarkdownToDescriptionAsync(
+                description,
+                integration.JiraType.GetValueOrDefault(),
+                cancellationToken);
             
             // Step 4: Build create issue request
             var request = new CreateIssueRequest
@@ -279,7 +195,7 @@ public class JiraTicketProvider : ITicketProvider
                 Fields = new CreateIssueFields
                 {
                     Summary = summary,
-                    Description = adfDescription,
+                    Description = descriptionBody,
                     Issuetype = new IssueTypeField { Id = issueTypeId },
                     Project = new ProjectField { Id = projectId }
                 }
@@ -291,75 +207,26 @@ public class JiraTicketProvider : ITicketProvider
                 issueTypeId, 
                 integration.Id);
             
-            var response = await client.PostAsJsonAsync(
-                "/rest/api/3/issue", 
-                request, 
-                cancellationToken);
+            var response = await apiClient.CreateIssueAsync(request, cancellationToken);
             
-            // Handle specific HTTP status codes
-            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-            {
-                _logger.LogError(
-                    "Failed to authenticate with JIRA for integration {IntegrationId}",
-                    integration.Id);
-                throw new InvalidOperationException(
-                    "Failed to authenticate with JIRA. Please verify the API key.");
-            }
-
-            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-            {
-                _logger.LogError(
-                    "Access forbidden when creating issue in integration {IntegrationId}",
-                    integration.Id);
-                throw new InvalidOperationException(
-                    "You do not have permission to create issues in JIRA.");
-            }
-
-            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
-            {
-                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogError(
-                    "JIRA API validation error for integration {IntegrationId}: {ErrorContent}",
-                    integration.Id,
-                    errorContent);
-                throw new ArgumentException($"JIRA validation failed: {errorContent}");
-            }
-            
-            if ((int)response.StatusCode >= 500)
-            {
-                _logger.LogError(
-                    "JIRA server error {StatusCode} for integration {IntegrationId}",
-                    response.StatusCode,
-                    integration.Id);
-                throw new HttpRequestException(
-                    "JIRA server error occurred. Please try again later.");
-            }
-            
-            response.EnsureSuccessStatusCode();
-            
-            var content = await response.Content.ReadAsStringAsync(cancellationToken);
-            var createResponse = JsonSerializer.Deserialize<CreateIssueResponse>(
-                content,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            
-            if (createResponse == null || string.IsNullOrEmpty(createResponse.Key))
+            if (string.IsNullOrEmpty(response.Key))
             {
                 _logger.LogError("JIRA returned null or empty issue key for integration {IntegrationId}", integration.Id);
                 throw new InvalidOperationException("Failed to create JIRA issue: No issue key returned.");
             }
             
             var baseUrl = integration.Url?.TrimEnd('/') ?? string.Empty;
-            var issueUrl = $"{baseUrl}/browse/{createResponse.Key}";
+            var issueUrl = $"{baseUrl}/browse/{response.Key}";
             
             _logger.LogInformation(
                 "Successfully created JIRA issue {IssueKey} in integration {IntegrationId}",
-                createResponse.Key,
+                response.Key,
                 integration.Id);
             
             return new ExternalTicketCreationResult(
-                IssueKey: createResponse.Key,
+                IssueKey: response.Key,
                 IssueUrl: issueUrl,
-                IssueId: createResponse.Id
+                IssueId: response.Id
             );
         }
         catch (HttpRequestException ex)
@@ -375,49 +242,21 @@ public class JiraTicketProvider : ITicketProvider
     }
 
     private async Task<string> GetProjectIdFromFilterQueryAsync(
+        IJiraApiClient apiClient,
         Integration integration,
         CancellationToken cancellationToken = default)
     {
-        var client = GetHttpClient(integration);
-        
         // Build JQL query from FilterQuery (or use default if empty)
         var jql = string.IsNullOrEmpty(integration.FilterQuery) 
             ? "ORDER BY updated DESC" 
             : integration.FilterQuery;
-        var query = HttpUtility.ParseQueryString(string.Empty);
-        query["jql"] = jql;
-        query["fields"] = "project";
-
-        // Call JIRA Search API to get project from first result
-        var encodedJql = HttpUtility.UrlEncode(jql);
-        var requestUrl = $"/rest/api/3/search/jql?{query}";
         
         _logger.LogDebug(
             "Fetching project ID from JIRA integration {IntegrationId} using JQL: {Jql}", 
             integration.Id, 
             jql);
         
-        var response = await client.GetAsync(requestUrl, cancellationToken);
-        
-        if (response.StatusCode == HttpStatusCode.Unauthorized)
-        {
-            _logger.LogError("Failed to authenticate with JIRA for integration {IntegrationId}", integration.Id);
-            throw new InvalidOperationException("Failed to authenticate with JIRA. Please verify the API key.");
-        }
-
-        if (response.StatusCode == HttpStatusCode.BadRequest)
-        {
-            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogError("Invalid JQL query in FilterQuery for integration {IntegrationId}: {ErrorContent}", integration.Id, errorContent);
-            throw new ArgumentException("Invalid JQL query in integration FilterQuery. Please check the JQL syntax.");
-        }
-        
-        response.EnsureSuccessStatusCode();
-        
-        var content = await response.Content.ReadAsStringAsync(cancellationToken);
-        var searchResponse = JsonSerializer.Deserialize<JiraSearchResponse>(
-            content,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var searchResponse = await apiClient.SearchIssuesAsync(jql, "project", 0, 1, cancellationToken);
         
         var projectId = searchResponse?.Tickets?.FirstOrDefault()?.Fields?.Project?.Id;
         
@@ -434,69 +273,52 @@ public class JiraTicketProvider : ITicketProvider
     }
 
     private async Task<string> GetIssueTypeIdAsync(
-        Integration integration,
+        IJiraApiClient apiClient,
         string issueTypeName,
         CancellationToken cancellationToken = default)
     {
-        var client = GetHttpClient(integration);
-        
         _logger.LogDebug(
-            "Fetching issue type ID for '{IssueTypeName}' from JIRA integration {IntegrationId}", 
-            issueTypeName, 
-            integration.Id);
+            "Fetching issue type ID for '{IssueTypeName}'", 
+            issueTypeName);
         
-        var response = await client.GetAsync("/rest/api/3/issuetype", cancellationToken);
-        
-        if (response.StatusCode == HttpStatusCode.Unauthorized)
-        {
-            _logger.LogError("Failed to authenticate with JIRA for integration {IntegrationId}", integration.Id);
-            throw new InvalidOperationException("Failed to authenticate with JIRA. Please verify the API key.");
-        }
-        
-        response.EnsureSuccessStatusCode();
-        
-        var content = await response.Content.ReadAsStringAsync(cancellationToken);
-        var issueTypes = JsonSerializer.Deserialize<List<IssueType>>(
-            content,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        var issueTypes = await apiClient.GetIssueTypesAsync(cancellationToken);
         
         var issueType = issueTypes?.FirstOrDefault(it => 
             string.Equals(it.Name, issueTypeName, StringComparison.OrdinalIgnoreCase));
         
         if (issueType == null)
         {
-            _logger.LogError("Issue type '{IssueTypeName}' not found in JIRA integration {IntegrationId}", issueTypeName, integration.Id);
+            _logger.LogError("Issue type '{IssueTypeName}' not found", issueTypeName);
             throw new ArgumentException(
-                $"Issue type '{issueTypeName}' not found in JIRA integration {integration.Id}. " +
+                $"Issue type '{issueTypeName}' not found in JIRA. " +
                 $"Available types: {string.Join(", ", issueTypes?.Select(it => it.Name) ?? new List<string>())}");
         }
         
         _logger.LogDebug(
-            "Resolved issue type '{IssueTypeName}' to ID {IssueTypeId} for integration {IntegrationId}", 
+            "Resolved issue type '{IssueTypeName}' to ID {IssueTypeId}", 
             issueTypeName, 
-            issueType.Id, 
-            integration.Id);
+            issueType.Id);
         
         return issueType.Id;
     }
 
     /// <summary>
-    /// Maps a Jira ticket to ExternalTicketDto with ADF-to-Markdown conversion for description and comments.
+    /// Maps a Jira ticket to ExternalTicketDto with content conversion.
     /// </summary>
-    /// <param name="jiraTicket">The Jira ticket from API response.</param>
-    /// <param name="integration">The integration configuration.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>ExternalTicketDto with Markdown-formatted content.</returns>
-    /// <exception cref="HttpRequestException">Thrown when ADF conversion service is unavailable.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when ADF conversion fails after retries.</exception>
-    private async Task<ExternalTicketDto> MapJiraTicketToDtoAsync(JiraTicket jiraTicket, Integration integration, CancellationToken cancellationToken = default)
+    private async Task<ExternalTicketDto> MapJiraTicketToDtoAsync(
+        JiraTicket jiraTicket, 
+        Integration integration, 
+        CancellationToken cancellationToken = default)
     {
         var statusName = jiraTicket.Fields?.Status?.Name ?? "Unknown";
         var priorityName = jiraTicket.Fields?.Priority?.Name ?? "Medium";
         
         var priorityValue = MapPriorityToValue(priorityName);
         
-        var comments = await ConvertCommentsAsync(jiraTicket.Fields?.Comment?.Comments, cancellationToken);
+        var comments = await ConvertCommentsAsync(
+            jiraTicket.Fields?.Comment?.Comments, 
+            integration.JiraType.GetValueOrDefault(),
+            cancellationToken);
         
         // Build external URL directly from integration base URL and ticket key
         var baseUrl = integration.Url?.TrimEnd('/') ?? string.Empty;
@@ -508,7 +330,10 @@ public class JiraTicketProvider : ITicketProvider
             IntegrationId: integration.Id,
             ExternalTicketId: jiraTicket.Key ?? "UNKNOWN",
             Title: jiraTicket.Fields?.Summary ?? "Untitled",
-            Description: await ExtractDescriptionTextAsync(jiraTicket.Fields?.Description, cancellationToken),
+            Description: await ExtractDescriptionTextAsync(
+                jiraTicket.Fields?.Description, 
+                integration.JiraType.GetValueOrDefault(),
+                cancellationToken),
             StatusName: statusName,
             StatusColor: GetStatusColor(statusName),
             PriorityName: priorityName,
@@ -520,14 +345,12 @@ public class JiraTicketProvider : ITicketProvider
     }
 
     /// <summary>
-    /// Batch-converts all Jira comments from ADF (Atlassian Document Format) to Markdown in a single HTTP call.
+    /// Converts all Jira comments from their native format to Markdown.
     /// </summary>
-    /// <param name="jiraComments">List of Jira comments with ADF body content.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>List of CommentDto objects with Markdown-formatted content.</returns>
-    /// <exception cref="HttpRequestException">Thrown when ADF conversion service is unavailable.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when batch ADF conversion fails after retries.</exception>
-    private async Task<List<CommentDto>> ConvertCommentsAsync(IEnumerable<JiraComment>? jiraComments, CancellationToken cancellationToken = default)
+    private async Task<List<CommentDto>> ConvertCommentsAsync(
+        IEnumerable<JiraComment>? jiraComments,
+        Domain.Enums.JiraType jiraType,
+        CancellationToken cancellationToken = default)
     {
         if (jiraComments == null || !jiraComments.Any())
         {
@@ -536,54 +359,39 @@ public class JiraTicketProvider : ITicketProvider
         
         try
         {
-            // Collect all ADF structures from comments
-            var adfElements = new List<JsonElement>();
+            var comments = new List<CommentDto>();
             foreach (var comment in jiraComments)
             {
-                var json = JsonSerializer.Serialize(comment.Body);
-                var adfElement = JsonSerializer.Deserialize<JsonElement>(json);
-                adfElements.Add(adfElement);
-            }
-            
-            // Batch convert all comments in a single HTTP call
-            var markdownResults = await _adfConversionService.ConvertAdfBatchToMarkdownAsync(adfElements, cancellationToken);
-            
-            _logger.LogDebug("Successfully batch-converted {Count} comments from ADF to Markdown", 
-                markdownResults.Count);
-            
-            // Map results to CommentDto
-            var comments = new List<CommentDto>();
-            for (int i = 0; i < jiraComments.Count(); i++)
-            {
-                var jiraComment = jiraComments.ElementAt(i);
-                var markdown = i < markdownResults.Count ? markdownResults[i] : string.Empty;
+                var markdown = await _contentConverter.ConvertCommentBodyToMarkdownAsync(
+                    comment.Body,
+                    jiraType,
+                    cancellationToken);
                 
                 comments.Add(new CommentDto(
-                    jiraComment.Id ?? Guid.NewGuid().ToString(),
-                    jiraComment.Author?.DisplayName ?? "Unknown",
+                    comment.Id ?? Guid.NewGuid().ToString(),
+                    comment.Author?.DisplayName ?? "Unknown",
                     markdown ?? string.Empty
                 ));
             }
             
+            _logger.LogDebug("Successfully converted {Count} comments to Markdown", comments.Count);
             return comments;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to batch-convert {Count} comments from ADF to Markdown. Sync operation will fail.", 
+            _logger.LogError(ex, "Failed to convert {Count} comments to Markdown. Sync operation will fail.", 
                 jiraComments.Count());
             throw;
         }
     }
 
     /// <summary>
-    /// Converts Jira ticket description from ADF (Atlassian Document Format) to Markdown.
+    /// Converts Jira ticket description from its native format to Markdown.
     /// </summary>
-    /// <param name="description">The ADF-formatted description JSON element from Jira API.</param>
-    /// <param name="cancellationToken">Cancellation token for the operation.</param>
-    /// <returns>Markdown-formatted description, or empty string if description is null/empty.</returns>
-    /// <exception cref="HttpRequestException">Thrown when ADF conversion service is unavailable.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when ADF conversion fails after retries.</exception>
-    private async Task<string> ExtractDescriptionTextAsync(JsonElement? description, CancellationToken cancellationToken = default)
+    private async Task<string> ExtractDescriptionTextAsync(
+        JsonElement? description,
+        Domain.Enums.JiraType jiraType,
+        CancellationToken cancellationToken = default)
     {
         if (!description.HasValue || 
             description.Value.ValueKind == JsonValueKind.Undefined || 
@@ -594,14 +402,18 @@ public class JiraTicketProvider : ITicketProvider
         
         try
         {
-            var markdown = await _adfConversionService.ConvertAdfToMarkdownAsync(description.Value, cancellationToken);
-            _logger.LogDebug("Successfully converted description ADF to Markdown: {MarkdownLength} characters", 
+            var markdown = await _contentConverter.ConvertDescriptionToMarkdownAsync(
+                description.Value,
+                jiraType,
+                cancellationToken);
+            
+            _logger.LogDebug("Successfully converted description to Markdown: {MarkdownLength} characters", 
                 markdown?.Length ?? 0);
             return markdown ?? string.Empty;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to convert description ADF to Markdown. Sync operation will fail.");
+            _logger.LogError(ex, "Failed to convert description to Markdown. Sync operation will fail.");
             throw;
         }
     }

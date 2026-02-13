@@ -24,7 +24,14 @@ export const login = async (email: string, password: string): Promise<AuthRespon
 
     if (!response.ok) {
         if (response.status === 404) throw new Error("API endpoint not found");
-        if (response.status === 401) throw new Error('Invalid credentials');
+        if (response.status === 401) {
+            try {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || errorData.message || 'Invalid credentials');
+            } catch {
+                throw new Error('Invalid credentials');
+            }
+        }
         throw new Error('Login failed');
     }
 
@@ -32,8 +39,7 @@ export const login = async (email: string, password: string): Promise<AuthRespon
     localStorage.setItem('nexus_token', data.token);
     localStorage.setItem('nexus_user', JSON.stringify(data.user));
     return data;
-  } catch (error: any) {
-    console.error('Login failed:', error);
+  } catch (error) {
     throw error;
   }
 };
@@ -53,7 +59,18 @@ export const register = async (email: string, password: string, fullName: string
 
     if (!response.ok) {
         if (response.status === 404) throw new Error("API endpoint not found");
-        if (response.status === 400) throw new Error('Registration failed: Invalid data');
+        if (response.status === 400 || response.status === 409) {
+            try {
+                const errorData = await response.json();
+                // Validation errors come in 'detail' field, duplicates in 'message'
+                throw new Error(errorData.detail || errorData.message || 'Registration failed: Invalid data');
+            } catch (e: any) {
+                if (e.message && !e.message.includes('endpoint')) {
+                    throw e;
+                }
+                throw new Error('Registration failed: Invalid data');
+            }
+        }
         throw new Error('Registration failed');
     }
 
@@ -61,8 +78,7 @@ export const register = async (email: string, password: string, fullName: string
     localStorage.setItem('nexus_token', data.token);
     localStorage.setItem('nexus_user', JSON.stringify(data.user));
     return data;
-  } catch (error: any) {
-    console.error('Registration failed:', error);
+  } catch (error) {
     throw error;
   }
 };
@@ -82,9 +98,8 @@ export const updateUser = async (data: { name: string, email: string }): Promise
     const updatedUser = await response.json();
     localStorage.setItem('nexus_user', JSON.stringify(updatedUser));
     return updatedUser;
-  } catch (error) {
-    console.error('Failed to update user:', error);
-    throw error;
+  } catch (e) {
+    throw e;
   }
 };
 
@@ -100,12 +115,19 @@ export const changePassword = async (currentPassword: string, newPassword: strin
         });
 
         if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.message || "Failed to change password");
+            try {
+                const err = await response.json();
+                // Validation errors come in 'detail' field
+                throw new Error(err.detail || err.message || "Failed to change password");
+            } catch (e: any) {
+                if (e.message && !e.message.includes('Failed to')) {
+                    throw e;
+                }
+                throw new Error("Failed to change password");
+            }
         }
-    } catch (error) {
-        console.error('Failed to change password:', error);
-        throw error;
+    } catch (e) {
+        throw e;
     }
 };
 

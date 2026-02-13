@@ -14,7 +14,7 @@ namespace Orchestra.Infrastructure.Integrations.Providers.Jira.Models
     {
         public string Summary { get; set; }
 
-        public JsonElement Description { get; set; }
+        public object Description { get; set; }
 
         public IssueTypeField Issuetype { get; set; }
 

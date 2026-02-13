@@ -12,5 +12,6 @@ public record CreateIntegrationRequest(
     string? Username,
     string ApiKey,  // Will be encrypted before storage
     string? FilterQuery,
-    bool Vectorize
+    bool Vectorize,
+    string? JiraType = null  // "Cloud" or "OnPremise", defaults to Cloud if not specified
 );

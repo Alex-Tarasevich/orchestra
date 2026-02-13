@@ -15,7 +15,8 @@ public class Integration
         string? url,
         string apiKey, // Decrypted API key
         string? filterQuery,
-        IntegrationType integrationType)
+        IntegrationType integrationType,
+        JiraType? jiraType = null)
     {
         Id = id;
         WorkspaceId = workspaceId;
@@ -25,6 +26,7 @@ public class Integration
         // Note: ApiKey is not stored, only used transiently
         FilterQuery = filterQuery;
         Type = integrationType;
+        JiraType = jiraType;
         CreatedAt = DateTime.UtcNow;
         IsActive = true;
     }
@@ -35,6 +37,7 @@ public class Integration
     public IntegrationType Type { get; private set; }
     public string? Icon { get; private set; }
     public ProviderType Provider { get; private set; }
+    public JiraType? JiraType { get; private set; }
     public string? Url { get; private set; }
     public string? Username { get; private set; }
     public string? EncryptedApiKey { get; private set; }
@@ -61,7 +64,8 @@ public class Integration
         string? username = null,
         string? encryptedApiKey = null,
         string? filterQuery = null,
-        bool vectorize = false)
+        bool vectorize = false,
+        JiraType? jiraType = null)
     {
         // Validate workspace ID
         if (workspaceId == Guid.Empty)
@@ -89,6 +93,7 @@ public class Integration
             EncryptedApiKey = encryptedApiKey,
             FilterQuery = filterQuery,
             Vectorize = vectorize,
+            JiraType = jiraType ?? Orchestra.Domain.Enums.JiraType.Cloud, // Default to Cloud
             Connected = false, // Default to disconnected until first successful sync
             CreatedAt = DateTime.UtcNow,
             IsActive = true
@@ -104,8 +109,7 @@ public class Integration
     /// <param name="url">The URL for the integration (optional, must be absolute if specified).</param>
     /// <param name="username">The username for authentication (optional).</param>
     /// <param name="encryptedApiKey">The encrypted API key (optional, only updated if provided).</param>
-    /// <param name="filterQuery">The filter query for data retrieval (optional).</param>
-    /// <param name="vectorize">Whether to enable vectorization (default false).</param>
+    /// <param name="jiraType">The Jira instance type (optional, only updated if specified).</param>
     public void Update(
         string name,
         ProviderType? provider = null,
@@ -113,7 +117,8 @@ public class Integration
         string? username = null,
         string? encryptedApiKey = null,
         string? filterQuery = null,
-        bool vectorize = false)
+        bool vectorize = false,
+        JiraType? jiraType = null)
     {
         // Validate and trim name
         var trimmedName = name?.Trim() ?? string.Empty;
@@ -133,6 +138,12 @@ public class Integration
         }
         Url = url;
         Username = username;
+        FilterQuery = filterQuery;
+        Vectorize = vectorize;
+        if (jiraType.HasValue)
+        {
+            JiraType = jiraType;
+        }
         FilterQuery = filterQuery;
         Vectorize = vectorize;
         UpdatedAt = DateTime.UtcNow;

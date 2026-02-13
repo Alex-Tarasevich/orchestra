@@ -68,6 +68,8 @@ public class IntegrationService : IIntegrationService
             var validProviders = string.Join(", ", Enum.GetNames<ProviderType>());
             throw new ArgumentException($"Invalid provider: {request.Provider}. Valid providers are: {validProviders}", nameof(request.Provider));
         }
+
+        // 3b. Validate duplicate name
         var isDuplicate = await _integrationDataAccess.ExistsByNameInWorkspaceAsync(
             request.Name, 
             request.WorkspaceId, 
@@ -83,7 +85,19 @@ public class IntegrationService : IIntegrationService
             ? null 
             : _credentialEncryptionService.Encrypt(request.ApiKey);
 
-        // 5. Create integration entity using domain factory
+        // 5. Parse JiraType if provided and provider is JIRA
+        Domain.Enums.JiraType? jiraType = null;
+        if (providerType == ProviderType.JIRA && !string.IsNullOrEmpty(request.JiraType))
+        {
+            if (!Enum.TryParse<Domain.Enums.JiraType>(request.JiraType, ignoreCase: true, out var parsedJiraType))
+            {
+                var validJiraTypes = string.Join(", ", Enum.GetNames<Domain.Enums.JiraType>());
+                throw new ArgumentException($"Invalid Jira type: {request.JiraType}. Valid types are: {validJiraTypes}", nameof(request.JiraType));
+            }
+            jiraType = parsedJiraType;
+        }
+
+        // 6. Create integration entity using domain factory
         var integration = Integration.Create(
             workspaceId: request.WorkspaceId,
             name: request.Name,
@@ -93,13 +107,14 @@ public class IntegrationService : IIntegrationService
             username: request.Username,
             encryptedApiKey: encryptedApiKey,
             filterQuery: request.FilterQuery,
-            vectorize: request.Vectorize
+            vectorize: request.Vectorize,
+            jiraType: jiraType
         );
 
-        // 6. Persist to database
+        // 7. Persist to database
         await _integrationDataAccess.AddAsync(integration, cancellationToken);
 
-        // 7. Return DTO (without credentials)
+        // 8. Return DTO (without credentials)
         return MapToDto(integration);
     }
 

@@ -19,12 +19,16 @@ export const getWorkspaces = async (): Promise<Workspace[]> => {
     if (contentType && contentType.includes("text/html")) throw new Error("Not JSON");
 
     if (!response.ok) {
-      throw new Error(`Backend error: ${response.statusText}`);
+      try {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || errorData.message || response.statusText);
+      } catch {
+        throw new Error(`Backend error: ${response.statusText}`);
+      }
     }
     return await response.json();
   } catch (error) {
-    console.error('Failed to fetch workspaces:', error);
-    return [];
+    throw error;
   }
 };
 
@@ -40,12 +44,16 @@ export const createWorkspace = async (name: string): Promise<Workspace> => {
     if (contentType && contentType.includes("text/html")) throw new Error("Not JSON");
 
     if (!response.ok) {
-      throw new Error(`Backend error: ${response.statusText}`);
+      try {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || errorData.message || response.statusText);
+      } catch {
+        throw new Error(`Backend error: ${response.statusText}`);
+      }
     }
 
     return await response.json();
   } catch (error) {
-    console.error('Failed to create workspace:', error);
     throw error;
   }
 };
@@ -58,10 +66,16 @@ export const updateWorkspace = async (id: string, name: string): Promise<Workspa
       body: JSON.stringify({ name }),
     });
 
-    if (!response.ok) throw new Error(`Backend error: ${response.statusText}`);
+    if (!response.ok) {
+      try {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || errorData.message || response.statusText);
+      } catch {
+        throw new Error(`Backend error: ${response.statusText}`);
+      }
+    }
     return await response.json();
   } catch (error) {
-    console.error('Failed to update workspace:', error);
     throw error;
   }
 };
@@ -73,9 +87,15 @@ export const deleteWorkspace = async (id: string): Promise<void> => {
       headers: getAuthHeaders(),
     });
 
-    if (!response.ok) throw new Error(`Backend error: ${response.statusText}`);
+    if (!response.ok) {
+      try {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || errorData.message || response.statusText);
+      } catch {
+        throw new Error(`Backend error: ${response.statusText}`);
+      }
+    }
   } catch (error) {
-    console.error('Failed to delete workspace:', error);
     throw error;
   }
 };
