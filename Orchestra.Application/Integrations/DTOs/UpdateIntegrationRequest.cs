@@ -11,5 +11,6 @@ public record UpdateIntegrationRequest(
     string? Username,
     string? ApiKey,  // If contains "••••••••••••", preserve existing encrypted key
     string? FilterQuery,
-    bool Vectorize
+    bool Vectorize,
+    bool? Connected = null  // Optional connection status (only updated if provided)
 );

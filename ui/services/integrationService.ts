@@ -13,6 +13,7 @@ export interface IntegrationDTO {
   apiKey: string;
   filterQuery?: string;
   vectorize?: boolean;
+  connected?: boolean;  // Optional connection status
 }
 
 export interface CreateIntegrationDTO extends IntegrationDTO {
@@ -90,6 +91,33 @@ export const deleteIntegration = async (id: string): Promise<void> => {
     }
   } catch (error) {
     console.error('Failed to delete integration:', error);
+    throw error;
+  }
+};
+
+export interface ConnectionTestRequest {
+  provider: string;
+  url: string;
+  username?: string;
+  apiKey: string;
+  jiraType?: string;  // "Cloud" or "OnPremise" for Jira integrations
+}
+
+export const testIntegrationConnection = async (data: ConnectionTestRequest): Promise<void> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/validate-connection`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      const errorMessage = (errorData as any)?.message || `Connection failed: ${response.statusText}`;
+      throw new Error(errorMessage);
+    }
+  } catch (error) {
+    console.error('Failed to test integration connection:', error);
     throw error;
   }
 };

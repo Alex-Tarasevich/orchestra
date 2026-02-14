@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Layers, GitBranch, Database, Globe, X, Save, Check, Loader2, Trash2, AlertTriangle, RefreshCw, Key, Filter, Zap, User, Link as LinkIcon, Search, ChevronDown } from 'lucide-react';
+import { Plus, Layers, GitBranch, Database, Globe, X, Save, Check, Loader2, Trash2, AlertTriangle, RefreshCw, Key, Filter, Zap, User, Link as LinkIcon, Search, ChevronDown, Wifi } from 'lucide-react';
 import { Integration, IntegrationType } from '../types';
-import { getIntegrations, createIntegration, updateIntegration, deleteIntegration } from '../services/integrationService';
+import { getIntegrations, createIntegration, updateIntegration, deleteIntegration, testIntegrationConnection } from '../services/integrationService';
+import FilterWarningModal from './FilterWarningModal';
 
 interface IntegrationsProps {
   workspaceId: string;
@@ -16,6 +17,11 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isFilterWarningOpen, setIsFilterWarningOpen] = useState(false);
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [connectionTestError, setConnectionTestError] = useState<string | null>(null);
+  const [connectionTestSuccess, setConnectionTestSuccess] = useState(false);
+  const [testFailed, setTestFailed] = useState(false);
 
   const fetchAll = async () => {
     setIsLoading(true);
@@ -153,20 +159,74 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Check if filter warning should be shown
+    if (shouldShowFilterWarning()) {
+      setIsFilterWarningOpen(true);
+      return;
+    }
+    
+    // Proceed with saving
+    await performSave();
+  };
+
+  const shouldShowFilterWarning = (): boolean => {
+    const needsFilter = formState.type === IntegrationType.TRACKER || formState.type === IntegrationType.KNOWLEDGE_BASE;
+    return needsFilter && !formState.filterQuery.trim();
+  };
+
+  const performSave = async () => {
     setIsSaving(true);
     try {
+      // Determine connected status: false if test failed, true by default
+      const connected = testFailed ? false : true;
+      
       if (editingId) {
-        const updated = await updateIntegration(editingId, { ...formState });
+        const updated = await updateIntegration(editingId, { ...formState, connected });
         setIntegrations(prev => prev.map(item => item.id === editingId ? { ...updated, workspaceId } : item));
       } else {
-        const newIntegration = await createIntegration({ ...formState, workspaceId });
+        const newIntegration = await createIntegration({ ...formState, workspaceId, connected });
         setIntegrations(prev => [...prev, { ...newIntegration, workspaceId }]);
       }
       setIsModalOpen(false);
+      setConnectionTestError(null);
+      setConnectionTestSuccess(false);
+      setTestFailed(false);
     } catch (error) {
       console.error("Failed to save integration", error);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    setIsTestingConnection(true);
+    setConnectionTestError(null);
+    setConnectionTestSuccess(false);
+    setTestFailed(false);
+    
+    try {
+      const testRequest: any = {
+        provider: formState.provider,
+        url: formState.url,
+        username: formState.username,
+        apiKey: formState.apiKey
+      };
+      
+      // Include jiraType for Jira integrations
+      if (formState.provider === 'jira') {
+        testRequest.jiraType = formState.jiraType;
+      }
+      
+      await testIntegrationConnection(testRequest);
+      setConnectionTestSuccess(true);
+      setTestFailed(false);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to test connection';
+      setConnectionTestError(errorMessage);
+      setTestFailed(true);
+    } finally {
+      setIsTestingConnection(false);
     }
   };
 
@@ -406,6 +466,36 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
                   <p className="text-[10px] text-textMuted ml-1">Keys are encrypted at rest.</p>
               </div>
 
+              {/* Test Connection Button */}
+              <div className="pt-2 space-y-2">
+                  <button
+                    type="button"
+                    onClick={handleTestConnection}
+                    disabled={isTestingConnection || !formState.url || !formState.apiKey}
+                    className="w-full px-4 py-2.5 border border-primary/40 hover:border-primary bg-primary/5 hover:bg-primary/10 text-primary rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isTestingConnection ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Testing...
+                      </>
+                    ) : connectionTestSuccess ? (
+                      <>
+                        <Check className="w-4 h-4 text-emerald-500" />
+                        <span className="text-emerald-500">Connection Verified</span>
+                      </>
+                    ) : (
+                      <>
+                        <Wifi className="w-4 h-4" />
+                        Test Connection
+                      </>
+                    )}
+                  </button>
+                  {connectionTestError && (
+                    <p className="text-[10px] text-red-500 ml-1">⚠ {connectionTestError}</p>
+                  )}
+              </div>
+
               {/* JQL Query / Filter Query Section - Improved with dynamic labeling */}
               {(formState.type === IntegrationType.TRACKER || formState.type === IntegrationType.KNOWLEDGE_BASE) && (
                 <div className="space-y-1.5 pt-2 border-t border-border/40">
@@ -469,6 +559,18 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
           </div>
         </div>
       )}
+
+      {/* Filter Warning Modal */}
+      <FilterWarningModal
+        isOpen={isFilterWarningOpen}
+        providerName={formState.provider}
+        isProcessing={isSaving}
+        onCancel={() => setIsFilterWarningOpen(false)}
+        onProceed={() => {
+          setIsFilterWarningOpen(false);
+          performSave();
+        }}
+      />
 
       {/* Delete Confirmation */}
       {deleteConfirmationId && (

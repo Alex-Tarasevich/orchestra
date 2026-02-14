@@ -94,7 +94,7 @@ public class Integration
             FilterQuery = filterQuery,
             Vectorize = vectorize,
             JiraType = jiraType ?? Orchestra.Domain.Enums.JiraType.Cloud, // Default to Cloud
-            Connected = false, // Default to disconnected until first successful sync
+            Connected = true, // Default to connected
             CreatedAt = DateTime.UtcNow,
             IsActive = true
         };
@@ -110,6 +110,7 @@ public class Integration
     /// <param name="username">The username for authentication (optional).</param>
     /// <param name="encryptedApiKey">The encrypted API key (optional, only updated if provided).</param>
     /// <param name="jiraType">The Jira instance type (optional, only updated if specified).</param>
+    /// <param name="connected">The connection status (optional, only updated if provided).</param>
     public void Update(
         string name,
         ProviderType? provider = null,
@@ -118,7 +119,8 @@ public class Integration
         string? encryptedApiKey = null,
         string? filterQuery = null,
         bool vectorize = false,
-        JiraType? jiraType = null)
+        JiraType? jiraType = null,
+        bool? connected = null)
     {
         // Validate and trim name
         var trimmedName = name?.Trim() ?? string.Empty;
@@ -152,6 +154,12 @@ public class Integration
         if (!string.IsNullOrEmpty(encryptedApiKey))
         {
             EncryptedApiKey = encryptedApiKey;
+        }
+
+        // Only update connected status if provided
+        if (connected.HasValue)
+        {
+            Connected = connected.Value;
         }
     }
 

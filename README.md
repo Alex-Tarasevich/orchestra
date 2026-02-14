@@ -24,12 +24,13 @@ Development shouldn't be about passive tracking; it should be about active orche
 ## ✨ Key Features
 
 - **Unified Connectivity:** Stop tab-switching. View tickets from every tracker in one place.
+- **Jira Integration:** Full support for **Jira Cloud and On-Premise** instances with real-time synchronization.
 - **Agent Assignment:** "Hire" an AI agent for a specific ticket type (e.g., *The Bug Fixer*, *The Documentation Writer*).
 - **Smart Workflows:** Trigger agent actions automatically when a ticket status changes.
 - **A.S.A.P. Execution:** Reduce cycle time from days to minutes with background execution workers.
 - **Tool Management System:** Equip agents with the specific tools they need (e.g., Jira API, Git access).
 - **Real-Time Feedback:** Watch agents work in real-time via SignalR updates.
-- **Jira Integration:** Full two-way conversion of content using a specialized ADF (Atlassian Document Format) generator.
+- **ADF Generator:** Full two-way conversion of content using a specialized Atlassian Document Format (ADF) generator for Jira.
 
 ---
 

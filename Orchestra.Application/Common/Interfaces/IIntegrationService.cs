@@ -57,4 +57,14 @@ public interface IIntegrationService
         Guid userId, 
         Guid integrationId, 
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Validates that an integration can successfully connect using the provided credentials.
+    /// </summary>
+    /// <param name="request">The connection validation request with provider credentials.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <exception cref="ArgumentException">Thrown when provider is invalid or credentials are missing.</exception>
+    Task ValidateConnectionAsync(
+        ValidateIntegrationConnectionRequest request,
+        CancellationToken cancellationToken = default);
 }

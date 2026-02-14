@@ -203,6 +203,44 @@ public class IntegrationController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Validates that a connection to an integration provider is successful.
+    /// </summary>
+    /// <param name="request">The connection validation request with provider credentials.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>200 OK if connection is valid.</returns>
+    /// <response code="200">Connection validated successfully.</response>
+    /// <response code="400">Invalid request data or connection failed.</response>
+    /// <response code="401">User not authenticated.</response>
+    [AllowAnonymous]
+    [HttpPost("validate-connection")]
+    [ProducesResponseType(200)]
+    [ProducesResponseType(typeof(ErrorResponse), 400)]
+    [ProducesResponseType(typeof(ErrorResponse), 401)]
+    public async Task<IActionResult> ValidateConnection(
+        [FromBody] ValidateIntegrationConnectionRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _integrationService.ValidateConnectionAsync(request, cancellationToken);
+            return Ok(new { success = true, message = "Connection validated successfully." });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new ErrorResponse(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ErrorResponse(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error during connection validation");
+            return BadRequest(new ErrorResponse("Failed to validate connection. Please check your credentials and try again."));
+        }
+    }
+
     private Guid GetUserIdFromClaims()
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value

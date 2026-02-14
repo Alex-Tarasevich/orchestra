@@ -4,6 +4,8 @@ using Orchestra.Application.Integrations.DTOs;
 using Orchestra.Domain.Entities;
 using Orchestra.Domain.Enums;
 using Orchestra.Domain.Interfaces;
+using System.Net.Http.Headers;
+using System.Text;
 
 namespace Orchestra.Application.Integrations.Services;
 
@@ -111,6 +113,22 @@ public class IntegrationService : IIntegrationService
             jiraType: jiraType
         );
 
+        // 6b. Set connected status if provided in request
+        if (request.Connected.HasValue)
+        {
+            integration.Update(
+                name: integration.Name,
+                provider: integration.Provider,
+                url: integration.Url,
+                username: integration.Username,
+                encryptedApiKey: null, // Don't re-encrypt
+                filterQuery: integration.FilterQuery,
+                vectorize: integration.Vectorize,
+                jiraType: integration.JiraType,
+                connected: request.Connected.Value
+            );
+        }
+
         // 7. Persist to database
         await _integrationDataAccess.AddAsync(integration, cancellationToken);
 
@@ -180,7 +198,8 @@ public class IntegrationService : IIntegrationService
             username: request.Username,
             encryptedApiKey: encryptedApiKey,
             filterQuery: request.FilterQuery,
-            vectorize: request.Vectorize
+            vectorize: request.Vectorize,
+            connected: request.Connected
         );
 
         // 7. Persist changes to database
@@ -218,6 +237,136 @@ public class IntegrationService : IIntegrationService
 
         // 4. Persist changes
         await _integrationDataAccess.UpdateAsync(integration, cancellationToken);
+    }
+
+    public async Task ValidateConnectionAsync(
+        ValidateIntegrationConnectionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        // Validate provider type
+        if (!Enum.TryParse<ProviderType>(request.Provider, ignoreCase: true, out var providerType))
+        {
+            var validProviders = string.Join(", ", Enum.GetNames<ProviderType>());
+            throw new ArgumentException($"Invalid provider: {request.Provider}. Valid providers are: {validProviders}", nameof(request.Provider));
+        }
+
+        // Validate required fields
+        if (string.IsNullOrWhiteSpace(request.Url))
+        {
+            throw new ArgumentException("URL is required for connection validation.", nameof(request.Url));
+        }
+
+        if (string.IsNullOrWhiteSpace(request.ApiKey))
+        {
+            throw new ArgumentException("API Key is required for connection validation.", nameof(request.ApiKey));
+        }
+
+        // Route to provider-specific validator
+        switch (providerType)
+        {
+            case ProviderType.JIRA:
+                await ValidateJiraConnectionAsync(request);
+                break;
+            case ProviderType.CONFLUENCE:
+                await ValidateConfluenceConnectionAsync(request);
+                break;
+            default:
+                throw new ArgumentException($"Connection validation not supported for provider: {request.Provider}", nameof(request.Provider));
+        }
+    }
+
+    private async Task ValidateJiraConnectionAsync(ValidateIntegrationConnectionRequest request)
+    {
+        try
+        {
+            using var client = CreateHttpClient(request);
+            
+            // Determine which Jira API to use based on type
+            // Cloud uses v3 API, On-Premise can use v2 which is more compatible
+            string endpoint = "/rest/api/2/serverInfo";
+            
+            if (!string.IsNullOrEmpty(request.JiraType) && 
+                request.JiraType.Equals("Cloud", StringComparison.OrdinalIgnoreCase))
+            {
+                endpoint = "/rest/api/3/serverInfo";
+            }
+            
+            var response = await client.GetAsync(endpoint);
+            
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                throw new InvalidOperationException("Failed to authenticate with Jira. Please verify your credentials.");
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException($"Failed to connect to Jira: {response.StatusCode}");
+            }
+        }
+        catch (HttpRequestException ex) when (ex.InnerException is System.Net.Sockets.SocketException)
+        {
+            throw new InvalidOperationException("Failed to connect to Jira. Please verify the URL is correct and reachable.");
+        }
+        catch (UriFormatException)
+        {
+            throw new ArgumentException("Invalid Jira URL format.");
+        }
+    }
+
+    private async Task ValidateConfluenceConnectionAsync(ValidateIntegrationConnectionRequest request)
+    {
+        try
+        {
+            using var client = CreateHttpClient(request);
+            
+            // Simple ping to Confluence API - fetch spaces
+            var response = await client.GetAsync("/wiki/rest/api/space?limit=1");
+            
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                throw new InvalidOperationException("Failed to authenticate with Confluence. Please verify your credentials.");
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException($"Failed to connect to Confluence: {response.StatusCode}");
+            }
+        }
+        catch (HttpRequestException ex) when (ex.InnerException is System.Net.Sockets.SocketException)
+        {
+            throw new InvalidOperationException("Failed to connect to Confluence. Please verify the URL is correct and reachable.");
+        }
+        catch (UriFormatException)
+        {
+            throw new ArgumentException("Invalid Confluence URL format.");
+        }
+    }
+
+    private HttpClient CreateHttpClient(ValidateIntegrationConnectionRequest request)
+    {
+        try
+        {
+            var client = new HttpClient();
+            
+            if (string.IsNullOrEmpty(request.Url))
+            {
+                throw new ArgumentException("Integration URL is required.", nameof(request.Url));
+            }
+
+            client.BaseAddress = new Uri(request.Url);
+
+            // Set Basic Auth header
+            var authValue = Convert.ToBase64String(
+                System.Text.Encoding.ASCII.GetBytes($"{request.Username}:{request.ApiKey}"));
+            client.DefaultRequestHeaders.Authorization = 
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", authValue);
+
+            return client;
+        }
+        catch (UriFormatException ex)
+        {
+            throw new ArgumentException($"Invalid URL format: '{request.Url}'", nameof(request.Url), ex);
+        }
     }
 
     private static IntegrationDto MapToDto(Integration integration)
