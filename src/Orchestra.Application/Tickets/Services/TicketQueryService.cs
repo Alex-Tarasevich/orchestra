@@ -783,6 +783,7 @@ public class TicketQueryService : ITicketQueryService
         try
         {
             var sentimentRequest = new TicketSentimentRequest(
+                ticket.WorkspaceId,
                 ticket.Id,
                 commentContents
             );
@@ -844,6 +845,7 @@ public class TicketQueryService : ITicketQueryService
             if (commentContents.Count > 0)
             {
                 ticketsToAnalyze.Add(new TicketSentimentRequest(
+                    ticket.WorkspaceId,
                     ticket.Id,
                     commentContents
                 ));

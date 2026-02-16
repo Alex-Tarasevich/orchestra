@@ -69,6 +69,7 @@ public class TicketEnrichmentService : ITicketEnrichmentService
             if (commentContents.Count > 0)
             {
                 ticketsToAnalyze.Add(new TicketSentimentRequest(
+                    ticket.WorkspaceId,
                     ticket.Id,
                     commentContents
                 ));
@@ -155,6 +156,7 @@ public class TicketEnrichmentService : ITicketEnrichmentService
         try
         {
             var sentimentRequest = new TicketSentimentRequest(
+                ticket.WorkspaceId,
                 ticket.Id,
                 commentContents
             );

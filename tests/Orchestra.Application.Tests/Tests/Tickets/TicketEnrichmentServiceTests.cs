@@ -66,7 +66,7 @@ namespace Orchestra.Application.Tests.Tests.Tickets
             var tickets = new List<TicketDto> { ticket };
 
             _sentimentMock.AnalyzeBatchSentimentAsync(
-                Arg.Any<List<TicketSentimentRequest>>(), Arg.Any<CancellationToken>())
+                Arg.Is<List<TicketSentimentRequest>>(reqs => reqs.Count == 1 && reqs[0].WorkspaceId == ticket.WorkspaceId && reqs[0].TicketId == ticket.Id), Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult(new List<TicketSentimentResult> { new("T1", 85) }));
 
             await _sut.CalculateSentimentAsync(tickets, CancellationToken.None);
@@ -86,7 +86,7 @@ namespace Orchestra.Application.Tests.Tests.Tickets
             var tickets = new List<TicketDto> { ticket };
 
             _sentimentMock.AnalyzeBatchSentimentAsync(
-                Arg.Any<List<TicketSentimentRequest>>(), Arg.Any<CancellationToken>())
+                Arg.Is<List<TicketSentimentRequest>>(reqs => reqs.Count == 1 && reqs[0].WorkspaceId == ticket.WorkspaceId && reqs[0].TicketId == ticket.Id), Arg.Any<CancellationToken>())
                 .Returns(Task.FromException<List<TicketSentimentResult>>(new Exception("fail")));
 
             await _sut.CalculateSentimentAsync(tickets, CancellationToken.None);
@@ -120,7 +120,7 @@ namespace Orchestra.Application.Tests.Tests.Tickets
                 .Build();
 
             _sentimentMock.AnalyzeBatchSentimentAsync(
-                Arg.Any<List<TicketSentimentRequest>>(), Arg.Any<CancellationToken>())
+                Arg.Is<List<TicketSentimentRequest>>(reqs => reqs.Count == 1 && reqs[0].WorkspaceId == ticket.WorkspaceId && reqs[0].TicketId == ticket.Id), Arg.Any<CancellationToken>())
                 .Returns(Task.FromResult(new List<TicketSentimentResult> { new("T4", 90) }));
 
             var result = await _sut.CalculateSentimentForSingleAsync(ticket, CancellationToken.None);
@@ -139,7 +139,7 @@ namespace Orchestra.Application.Tests.Tests.Tickets
                 .Build();
 
             _sentimentMock.AnalyzeBatchSentimentAsync(
-                Arg.Any<List<TicketSentimentRequest>>(), Arg.Any<CancellationToken>())
+                Arg.Is<List<TicketSentimentRequest>>(reqs => reqs.Count == 1 && reqs[0].WorkspaceId == ticket.WorkspaceId && reqs[0].TicketId == ticket.Id), Arg.Any<CancellationToken>())
                 .Returns(Task.FromException<List<TicketSentimentResult>>(new Exception("fail")));
 
             var result = await _sut.CalculateSentimentForSingleAsync(ticket, CancellationToken.None);

@@ -1,16 +1,30 @@
+
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using Orchestra.Application.Common;
 using Orchestra.Application.Common.Interfaces;
 using Orchestra.Domain.Entities;
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Orchestra.Infrastructure.Services;
 
 /// <summary>
 /// Service for analyzing sentiment of ticket comments using an external AI service.
 /// </summary>
-public class SentimentAnalysisService(IChatClient _chatClient, ILogger<SentimentAnalysisService> _logger) : ISentimentAnalysisService
+public class SentimentAnalysisService : ISentimentAnalysisService
 {
+    private readonly IChatClient _chatClient;
+    private readonly ILogger<SentimentAnalysisService> _logger;
+    // In-memory cache: key is workspaceId|ticketId|commentHash, value is sentiment score
+    private static readonly ConcurrentDictionary<string, int> _sentimentCache = new();
+
+    public SentimentAnalysisService(IChatClient chatClient, ILogger<SentimentAnalysisService> logger)
+    {
+        _chatClient = chatClient;
+        _logger = logger;
+    }
     /// <summary>
     /// Analyzes sentiment for multiple tickets based on their comments.
     /// </summary>
@@ -23,36 +37,89 @@ public class SentimentAnalysisService(IChatClient _chatClient, ILogger<Sentiment
             return new List<TicketSentimentResult>();
         }
 
-        _logger.LogInformation("Analyzing sentiment for {Count} tickets", requests.Count);
 
-        try
+        int cacheHits = 0, aiCalls = 0;
+        var results = new List<TicketSentimentResult>();
+        var toAnalyze = new List<TicketSentimentRequest>();
+        var cacheKeys = new Dictionary<string, string>(); // ticketId -> cacheKey
+
+        foreach (var req in requests)
         {
-            var ticketsInfo = $"""
-                    <tickets>
-                    {string.Join(Environment.NewLine, GetTicketsInfo(requests))}
-                    </tickets>
-                    """;
-
-            var response = await _chatClient.GetResponseAsync<List<TicketSentimentResult>>([new ChatMessage(ChatRole.System, SystemMessages.SentimentAnalysisSystemMessage), new ChatMessage(ChatRole.User, ticketsInfo)]);
-
-            return response.Result;
+            var key = BuildCacheKey(req.WorkspaceId, req.TicketId, req.Comments);
+            cacheKeys[req.TicketId] = key;
+            if (_sentimentCache.TryGetValue(key, out var cachedScore))
+            {
+                results.Add(new TicketSentimentResult(req.TicketId, cachedScore));
+                cacheHits++;
+            }
+            else
+            {
+                toAnalyze.Add(req);
+            }
         }
-        catch (Exception ex)
+
+        if (toAnalyze.Count > 0)
         {
-            _logger.LogError(ex, "Failed to analyze sentiment for batch of {Count} tickets", requests.Count);
-            
-            // Return default sentiment scores on error
-            return requests.Select(r => new TicketSentimentResult(r.TicketId, 75)).ToList();
+            aiCalls = toAnalyze.Count;
+            _logger.LogInformation("Sentiment cache miss for {Count} tickets (workspaceIds: {WorkspaceIds}) - calling AI", toAnalyze.Count, string.Join(",", toAnalyze.Select(r => r.WorkspaceId).Distinct()));
+            try
+            {
+                var ticketsInfo = $"""
+                        <tickets>
+                        {string.Join(Environment.NewLine, GetTicketsInfo(toAnalyze))}
+                        </tickets>
+                        """;
+
+                var response = await _chatClient.GetResponseAsync<List<TicketSentimentResult>>([
+                    new ChatMessage(ChatRole.System, SystemMessages.SentimentAnalysisSystemMessage),
+                    new ChatMessage(ChatRole.User, ticketsInfo)
+                ]);
+
+                foreach (var result in response.Result)
+                {
+                    // Store in cache
+                    if (cacheKeys.TryGetValue(result.TicketId, out var key))
+                    {
+                        _sentimentCache[key] = result.Sentiment;
+                    }
+                    results.Add(result);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to analyze sentiment for batch of {Count} tickets", toAnalyze.Count);
+                // Return default sentiment scores on error
+                foreach (var req in toAnalyze)
+                {
+                    results.Add(new TicketSentimentResult(req.TicketId, 75));
+                }
+            }
         }
+
+        _logger.LogInformation("Sentiment analysis: {CacheHits} cache hits, {AICalls} AI calls, {Total} total tickets", cacheHits, aiCalls, requests.Count);
+        return results;
+
+        // (Old try/catch block replaced by cache-aware logic above)
     }
 
     private string[] GetTicketsInfo(List<TicketSentimentRequest> requests)
     {
         return requests.Select(request => $"""
             <ticket>
-                <id>{request.TicketId}</title>
+                <workspaceId>{request.WorkspaceId}</workspaceId>
+                <id>{request.TicketId}</id>
                 <comments>{string.Join(';', request.Comments)}</comments>
             </ticket>
             """).ToArray();
+    }
+
+    private static string BuildCacheKey(Guid workspaceId, string ticketId, List<string> comments)
+    {
+        // Use workspaceId|ticketId|SHA256(comments joined)
+        var commentsJoined = string.Join("|", comments);
+        using var sha = SHA256.Create();
+        var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(commentsJoined));
+        var hashString = BitConverter.ToString(hash).Replace("-", "");
+        return $"{workspaceId}|{ticketId}|{hashString}";
     }
 }

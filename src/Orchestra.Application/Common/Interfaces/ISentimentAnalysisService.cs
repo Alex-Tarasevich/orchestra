@@ -3,9 +3,11 @@ namespace Orchestra.Application.Common.Interfaces;
 /// <summary>
 /// Request model for sentiment analysis containing ticket ID and associated comments.
 /// </summary>
+/// <param name="WorkspaceId">The unique identifier of the workspace.</param>
 /// <param name="TicketId">The unique identifier of the ticket.</param>
 /// <param name="Comments">List of comment content strings to analyze.</param>
 public record TicketSentimentRequest(
+    Guid WorkspaceId,
     string TicketId,
     List<string> Comments
 );
@@ -28,7 +30,7 @@ public interface ISentimentAnalysisService
     /// <summary>
     /// Analyzes sentiment for multiple tickets based on their comments.
     /// </summary>
-    /// <param name="requests">List of tickets with their comments to analyze.</param>
+    /// <param name="requests">List of tickets with their workspace IDs and comments to analyze.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>List of sentiment analysis results mapped to ticket IDs.</returns>
     Task<List<TicketSentimentResult>> AnalyzeBatchSentimentAsync(
