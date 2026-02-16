@@ -40,7 +40,6 @@ public class JiraTicketProvider : ITicketProvider
         var jql = !string.IsNullOrWhiteSpace(filter) 
             ? $"{filter} ORDER BY priority DESC, updated DESC" 
             : "ORDER BY priority DESC, updated DESC";
-        
         try
         {
             var fields = "key,status,priority,summary,description,comment,created,updated";
@@ -49,8 +48,8 @@ public class JiraTicketProvider : ITicketProvider
                 fields,
                 startAt,
                 maxResults,
+                pageToken,
                 cancellationToken);
-            
             if (searchResponse == null)
             {
                 _logger.LogWarning(
@@ -59,13 +58,10 @@ public class JiraTicketProvider : ITicketProvider
                     integration.Id);
                 return (new List<ExternalTicketDto>(), true, null);
             }
-            
             _logger.LogDebug("Fetched {TicketCount} tickets, IsLast={IsLast}",
                 searchResponse.Tickets?.Count ?? 0, searchResponse.IsLast);
-            
             var tickets = (await Task.WhenAll(searchResponse.Tickets?.Select(async jiraTicket => 
                 await MapJiraTicketToDtoAsync(jiraTicket, integration, cancellationToken)) ?? Array.Empty<Task<ExternalTicketDto>>())).ToList();
-            
             return (tickets, searchResponse.IsLast, searchResponse.NextPageToken);
         }
         catch (HttpRequestException ex)
@@ -256,7 +252,7 @@ public class JiraTicketProvider : ITicketProvider
             integration.Id, 
             jql);
         
-        var searchResponse = await apiClient.SearchIssuesAsync(jql, "project", 0, 1, cancellationToken);
+        var searchResponse = await apiClient.SearchIssuesAsync(jql, "project", 0, 1, null, cancellationToken);
         
         var projectId = searchResponse?.Tickets?.FirstOrDefault()?.Fields?.Project?.Id;
         

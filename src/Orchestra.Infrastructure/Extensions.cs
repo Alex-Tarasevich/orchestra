@@ -53,6 +53,17 @@ public static class Extensions
         builder.Services.AddScoped<IIntegrationService, IntegrationService>();
         builder.Services.AddScoped<IAgentDataAccess, AgentDataAccess>();
         builder.Services.AddScoped<ITicketDataAccess, TicketDataAccess>();
+        builder.Services.AddScoped<ITicketIdParsingService, TicketIdParsingService>();
+        // builder.Services.AddScoped<ITicketLookupCacheService, TicketLookupCacheService>();
+        builder.Services.AddScoped<ITicketAssignmentValidationService, TicketAssignmentValidationService>();
+        builder.Services.AddScoped<ITicketAuthorizationService, TicketAuthorizationService>();
+        builder.Services.AddScoped<ITicketCommentService, TicketCommentService>();
+        builder.Services.AddScoped<ITicketEnrichmentService, TicketEnrichmentService>();
+        builder.Services.AddScoped<ITicketPaginationService, TicketPaginationService>();
+        builder.Services.AddScoped<ITicketQueryService, TicketQueryService>();
+        builder.Services.AddScoped<ITicketCommandService, TicketCommandService>();
+        builder.Services.AddScoped<IExternalTicketFetchingService, TicketExternalFetchingService>();
+        builder.Services.AddScoped<ITicketMaterializationService, TicketMaterializationService>();
         builder.Services.AddScoped<ITicketService, TicketService>();
         builder.Services.AddScoped<IToolService, ToolService>();
         builder.Services.AddScoped<IToolCategoryDataAccess, ToolCategoryDataAccess>();

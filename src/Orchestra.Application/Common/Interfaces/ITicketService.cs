@@ -135,6 +135,9 @@ public interface ITicketService
     /// <exception cref="TicketNotFoundException">Thrown when the ticket does not exist.</exception>
     /// <exception cref="UnauthorizedTicketAccessException">Thrown when user lacks access to the ticket's workspace.</exception>
     /// <exception cref="SummarizationException">Thrown when AI summarization fails.</exception>
+    /// <summary>
+    /// Generates a summary for a ticket using the enrichment service.
+    /// </summary>
     Task<TicketDto> GenerateSummaryAsync(
         string ticketId,
         Guid userId,

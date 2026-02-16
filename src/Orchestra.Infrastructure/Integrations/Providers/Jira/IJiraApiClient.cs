@@ -24,6 +24,7 @@ public interface IJiraApiClient
         string fields,
         int startAt = 0,
         int maxResults = 50,
+        string? nextPageToken = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -80,5 +80,7 @@ Thumbs.db
 
 # spec-workflow files
 requirements/
+# Test results
+TestResults/
 
 # End of file

@@ -28,10 +28,12 @@ public class JiraOnPremiseApiClient : IJiraApiClient
         string fields,
         int startAt = 0,
         int maxResults = 50,
+        string? nextPageToken = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
+            // On-Premise Jira does not support nextPageToken, so we ignore it and use startAt/maxResults
             var query = HttpUtility.ParseQueryString(string.Empty);
             query["jql"] = jql;
             query["fields"] = fields;

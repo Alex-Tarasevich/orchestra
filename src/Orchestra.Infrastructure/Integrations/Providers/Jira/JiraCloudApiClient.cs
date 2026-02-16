@@ -28,6 +28,7 @@ public class JiraCloudApiClient : IJiraApiClient
         string fields,
         int startAt = 0,
         int maxResults = 50,
+        string? nextPageToken = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -35,8 +36,16 @@ public class JiraCloudApiClient : IJiraApiClient
             var query = HttpUtility.ParseQueryString(string.Empty);
             query["jql"] = jql;
             query["fields"] = fields;
-            query["startAt"] = startAt.ToString();
             query["maxResults"] = maxResults.ToString();
+            // Only use nextPageToken if provided, otherwise use startAt for initial page
+            if (!string.IsNullOrEmpty(nextPageToken))
+            {
+                query["nextPageToken"] = nextPageToken;
+            }
+            else
+            {
+                query["startAt"] = startAt.ToString();
+            }
 
             var requestUrl = $"rest/api/3/search/jql?{query}";
             var response = await _httpClient.GetAsync(requestUrl, cancellationToken);

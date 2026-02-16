@@ -1,0 +1,226 @@
+using System.Collections.Generic;
+using Orchestra.Application.Common.Interfaces;
+using Orchestra.Application.Tickets.DTOs;
+using Orchestra.Domain.Entities;
+using Orchestra.Domain.Enums;
+using Orchestra.Domain.Interfaces;
+using Microsoft.Extensions.Logging;
+using System.Linq;
+
+namespace Orchestra.Application.Tickets.Services;
+
+public class TicketExternalFetchingService : IExternalTicketFetchingService
+{
+    private readonly ITicketDataAccess _ticketDataAccess;
+    private readonly ITicketProviderFactory _ticketProviderFactory;
+    private readonly ITicketMappingService _ticketMappingService;
+    private readonly ILogger<TicketExternalFetchingService> _logger;
+
+    public TicketExternalFetchingService(
+        ITicketDataAccess ticketDataAccess,
+        ITicketProviderFactory ticketProviderFactory,
+        ITicketMappingService ticketMappingService,
+        ILogger<TicketExternalFetchingService> logger)
+    {
+        _ticketDataAccess = ticketDataAccess;
+        _ticketProviderFactory = ticketProviderFactory;
+        _ticketMappingService = ticketMappingService;
+        _logger = logger;
+    }
+
+    public async Task<(List<TicketDto> Tickets, bool HasMore, ExternalPaginationState State)> FetchExternalTicketsAsync(
+        List<Integration> trackerIntegrations,
+        int slotsToFill,
+        ExternalPaginationState? currentState,
+        CancellationToken cancellationToken)
+    {
+        var resultTickets = new List<TicketDto>();
+        var state = currentState ?? new ExternalPaginationState();
+        
+        // Calculate round-robin distribution
+        var distribution = CalculateProviderDistribution(trackerIntegrations, slotsToFill);
+
+        // Fetch tickets from each provider according to distribution
+        foreach (var (integrationId, ticketCount) in distribution)
+        {
+            if (ticketCount <= 0) continue;
+
+            var integration = trackerIntegrations.FirstOrDefault(i => i.Id == integrationId);
+            if (integration == null)
+            {
+                _logger.LogWarning(
+                    "Integration {IntegrationId} not found or missing provider",
+                    integrationId);
+                continue;
+            }
+
+            try
+            {
+                var provider = _ticketProviderFactory.CreateProvider(integration.Provider);
+                if (provider == null)
+                {
+                    _logger.LogWarning(
+                        "No provider implementation found for {Provider} (Integration: {IntegrationId})",
+                        integration.Provider,
+                        integrationId);
+                    continue;
+                }
+
+                // Get provider token from state
+                var providerToken = state.ProviderTokens.GetValueOrDefault(integrationId.ToString());
+
+                // Fetch tickets from provider
+                var (externalTickets, isLast, nextProviderToken) = await provider.FetchTicketsAsync(
+                    integration,
+                    state.TotalExternalFetched,
+                    ticketCount,
+                    providerToken,
+                    cancellationToken);
+
+                // Update state with new provider token
+                state.ProviderTokens[integrationId.ToString()] = nextProviderToken;
+                state.TotalExternalFetched += externalTickets.Count;
+
+                _logger.LogDebug(
+                    "Fetched {Count} tickets from {Provider} integration {IntegrationId}",
+                    externalTickets.Count,
+                    integration.Provider,
+                    integrationId);
+
+                // Build materialized ticket lookup
+                var materializedTickets = new Dictionary<(Guid, string), Ticket>();
+                foreach (var extTicket in externalTickets)
+                {
+                    var materializedTicket = await _ticketDataAccess.GetTicketByExternalIdAsync(
+                        integrationId,
+                        extTicket.ExternalTicketId,
+                        cancellationToken);
+
+                    if (materializedTicket != null)
+                    {
+                        materializedTickets[(integrationId, extTicket.ExternalTicketId)] = materializedTicket;
+                    }
+                }
+
+                // Map external tickets to DTOs and merge with materialized data
+                foreach (var extTicket in externalTickets)
+                {
+                    var compositeId = $"{integrationId}:{extTicket.ExternalTicketId}";
+                    
+                    // Check if materialized
+                    var hasMaterialized = materializedTickets.TryGetValue(
+                        (integrationId, extTicket.ExternalTicketId),
+                        out var materializedTicket);
+
+                    // For materialized tickets with internal status/priority, use those instead of external
+                    TicketStatusDto? status;
+                    TicketPriorityDto? priority;
+
+                    if (hasMaterialized && materializedTicket!.StatusId.HasValue)
+                    {
+                        // Use internal status for materialized tickets
+                        var internalStatus = await _ticketDataAccess.GetStatusByIdAsync(
+                            materializedTicket.StatusId.Value, 
+                            cancellationToken);
+                        status = internalStatus != null 
+                            ? new TicketStatusDto(internalStatus.Id, internalStatus.Name, internalStatus.Color)
+                            : (!string.IsNullOrEmpty(extTicket.StatusName)
+                                ? new TicketStatusDto(Guid.Empty, extTicket.StatusName, extTicket.StatusColor ?? "bg-gray-500")
+                                : null);
+                    }
+                    else
+                    {
+                        // Use external status for non-materialized tickets
+                        status = !string.IsNullOrEmpty(extTicket.StatusName)
+                            ? new TicketStatusDto(Guid.Empty, extTicket.StatusName, extTicket.StatusColor ?? "bg-gray-500")
+                            : null;
+                    }
+
+                    if (hasMaterialized && materializedTicket!.PriorityId.HasValue)
+                    {
+                        // Use internal priority for materialized tickets
+                        var internalPriority = await _ticketDataAccess.GetPriorityByIdAsync(
+                            materializedTicket.PriorityId.Value, 
+                            cancellationToken);
+                        priority = internalPriority != null 
+                            ? new TicketPriorityDto(internalPriority.Id, internalPriority.Name, internalPriority.Color, internalPriority.Value)
+                            : (!string.IsNullOrEmpty(extTicket.PriorityName)
+                                ? new TicketPriorityDto(Guid.Empty, extTicket.PriorityName, extTicket.PriorityColor ?? "bg-gray-500", extTicket.PriorityValue)
+                                : null);
+                    }
+                    else
+                    {
+                        // Use external priority for non-materialized tickets
+                        priority = !string.IsNullOrEmpty(extTicket.PriorityName)
+                            ? new TicketPriorityDto(Guid.Empty, extTicket.PriorityName, extTicket.PriorityColor ?? "bg-gray-500", extTicket.PriorityValue)
+                            : null;
+                    }
+
+                    var ticketDto = new TicketDto(
+                        Id: compositeId,
+                        WorkspaceId: integration.WorkspaceId,
+                        Title: extTicket.Title,
+                        Description: extTicket.Description,
+                        Status: status,
+                        Priority: priority,
+                        Internal: false,
+                        IntegrationId: integrationId,
+                        ExternalTicketId: extTicket.ExternalTicketId,
+                        ExternalUrl: extTicket.ExternalUrl,
+                        Source: integration.Provider.ToString().ToUpperInvariant(),
+                        AssignedAgentId: materializedTicket?.AssignedAgentId,
+                        AssignedWorkflowId: materializedTicket?.AssignedWorkflowId,
+                        Comments: extTicket.Comments,
+                        Satisfaction: null,
+                        Summary: null
+                    );
+
+                    resultTickets.Add(ticketDto);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Failed to fetch tickets from {Provider} integration {IntegrationId}",
+                    integration.Provider,
+                    integrationId);
+            }
+        }
+
+        // Determine if more tickets available
+        var hasMore = resultTickets.Count >= slotsToFill;
+
+        return (resultTickets, hasMore, state);
+    }
+
+    public Dictionary<Guid, int> CalculateProviderDistribution(
+        List<Integration> integrations,
+        int remainingSlots)
+    {
+        var distribution = new Dictionary<Guid, int>();
+        
+        if (integrations.Count == 0 || remainingSlots <= 0)
+        {
+            return distribution;
+        }
+
+        // Calculate base slots per provider and remainder
+        var baseSlots = remainingSlots / integrations.Count;
+        var remainder = remainingSlots % integrations.Count;
+
+        // Distribute base slots to all providers
+        foreach (var integration in integrations)
+        {
+            distribution[integration.Id] = baseSlots;
+        }
+
+        // Distribute remainder slots to first N providers
+        for (int i = 0; i < remainder; i++)
+        {
+            distribution[integrations[i].Id]++;
+        }
+
+        return distribution;
+    }
+}
