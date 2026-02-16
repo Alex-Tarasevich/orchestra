@@ -6,4 +6,5 @@
   <Project Path="src/Orchestra.Infrastructure/Orchestra.Infrastructure.csproj" />
   <Project Path="src/Orchestra.ServiceDefaults/Orchestra.ServiceDefaults.csproj" />
   <Project Path="src/Orchestra.Worker/Orchestra.Worker.csproj" />
+  <Project Path="tests/Orchestra.Application.Tests/Orchestra.Application.Tests.csproj" />
 </Solution>
