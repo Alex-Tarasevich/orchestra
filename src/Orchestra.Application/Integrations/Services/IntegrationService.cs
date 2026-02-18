@@ -309,8 +309,57 @@ public class IntegrationService : IIntegrationService
             case ProviderType.CONFLUENCE:
                 await ValidateConfluenceConnectionAsync(request);
                 break;
+            case ProviderType.GITHUB:
+                await ValidateGithubConnectionAsync(request);
+                break;
             default:
                 throw new ArgumentException($"Connection validation not supported for provider: {request.Provider}", nameof(request.Provider));
+        }
+    }
+
+    private async Task ValidateGithubConnectionAsync(ValidateIntegrationConnectionRequest request)
+    {
+        try
+        {
+            // Validate URL format
+            if (string.IsNullOrEmpty(request.Url))
+                throw new ArgumentException("GitHub repository URL is required.");
+
+            var uri = new Uri(request.Url);
+            var segments = uri.AbsolutePath.Trim('/').Split('/');
+            if (segments.Length < 2)
+                throw new ArgumentException("Invalid GitHub repository URL format. Expected: https://github.com/{owner}/{repo}");
+
+            var owner = segments[0];
+            var repo = segments[1];
+
+            using var client = new HttpClient();
+            client.BaseAddress = new Uri("https://api.github.com");
+            client.DefaultRequestHeaders.Add("Accept", "application/vnd.github+json");
+            client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+            client.DefaultRequestHeaders.Add("User-Agent", "Orchestra-GitHub-Integration");
+            client.DefaultRequestHeaders.Add("Authorization", $"Bearer {request.ApiKey}");
+
+            // Test: get repository details
+            var endpoint = $"/repos/{owner}/{repo}";
+            var response = await client.GetAsync(endpoint);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized || response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                throw new InvalidOperationException("Failed to authenticate with GitHub. Please verify your token and repository access.");
+            }
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException($"Failed to connect to GitHub: {response.StatusCode}");
+            }
+        }
+        catch (HttpRequestException ex) when (ex.InnerException is System.Net.Sockets.SocketException)
+        {
+            throw new InvalidOperationException("Failed to connect to GitHub. Please verify the URL is correct and reachable.");
+        }
+        catch (UriFormatException)
+        {
+            throw new ArgumentException("Invalid GitHub URL format.");
         }
     }
 

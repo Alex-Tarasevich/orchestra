@@ -27,10 +27,10 @@ export const IntegrationSelector: React.FC<IntegrationSelectorProps> = ({
         const allIntegrations = await getIntegrations(workspaceId);
         
         // Filter for TRACKER type integrations only
+        // No provider filtering here; GitHub will be included if present in backend response
         const trackerIntegrations = allIntegrations.filter(
           integration => integration.type === 'TRACKER'
         );
-        
         setIntegrations(trackerIntegrations);
       } catch (err) {
         setError('Failed to load integrations');

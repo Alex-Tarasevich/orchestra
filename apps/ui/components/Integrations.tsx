@@ -116,19 +116,17 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
   const handleOpenModal = (integration?: Integration) => {
     if (integration) {
       setEditingId(integration.id);
-      // Fix provider assignment: use lowercased provider for dropdown compatibility
-      const provider = integration.provider ? integration.provider.toLowerCase() : 'custom';
       setFormState({
         name: integration.name,
         type: integration.type,
-        provider,
+        provider: integration.provider || 'custom',
         url: integration.url || '',
         username: integration.username || '',
         apiKey: '••••••••••••', // Masked for existing
         filterQuery: integration.filterQuery || '',
         vectorize: integration.vectorize || false,
-        jiraType: integration.jiraType || 'Cloud',
-        confluenceType: integration.confluenceType || 'Cloud'
+        jiraType: (integration as any).jiraType || 'Cloud',
+        confluenceType: (integration as any).confluenceType || 'Cloud'
       });
     } else {
       setEditingId(null);
@@ -428,8 +426,7 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
                   />
               </div>
 
-              {/* Always show dropdown for Jira/Confluence if provider matches */}
-              {(formState.provider === 'jira' || (editingId && formState.provider === 'jira')) && (
+              {formState.provider === 'jira' && (
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold text-textMuted uppercase tracking-wider">Jira Instance Type</label>
                   <div className="relative">
@@ -451,7 +448,7 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
                 </div>
               )}
 
-              {(formState.provider === 'confluence' || (editingId && formState.provider === 'confluence')) && (
+              {formState.provider === 'confluence' && (
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold text-textMuted uppercase tracking-wider">Confluence Instance Type</label>
                   <div className="relative">

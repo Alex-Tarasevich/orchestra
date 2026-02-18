@@ -15,6 +15,7 @@ using Orchestra.Infrastructure.Persistence;
 using Orchestra.Infrastructure.Security;
 using Orchestra.Infrastructure.Integrations.Providers;
 using Orchestra.Infrastructure.Integrations.Providers.Jira;
+using Orchestra.Infrastructure.Integrations.Providers.GitHub;
 using Orchestra.Infrastructure.Integrations.Services;
 using Microsoft.Extensions.Options;
 using Orchestra.Infrastructure.Services;
@@ -109,11 +110,15 @@ public static class Extensions
         builder.Services.AddScoped<JiraApiClientFactory>();
         builder.Services.AddScoped<IJiraTextContentConverter, JiraTextContentConverter>();
 
+        // GitHub API client abstraction
+        builder.Services.AddScoped<GitHubApiClientFactory>();
+
         // Confluence API client abstraction for version support (Cloud v3, On-Premise v2)
         builder.Services.AddScoped<Orchestra.Infrastructure.Integrations.Providers.Confluence.ConfluenceApiClientFactory>();
 
         // Ticket provider implementations
         builder.Services.AddScoped<JiraTicketProvider>();
+        builder.Services.AddScoped<GitHubTicketProvider>();
 
         // Tool Services
         builder.Services.AddScoped<IJiraToolService, JiraToolService>();
