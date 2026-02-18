@@ -44,7 +44,8 @@ public class JiraToolService : IJiraToolService
         string workspaceId,
         string summary,
         string description,
-        string issueTypeName)
+        string issueTypeName,
+        string? projectId = null)
     {
         try
         {
@@ -67,8 +68,8 @@ public class JiraToolService : IJiraToolService
             // Step 1: Load and validate integration
             var integration = await GetAndValidateIntegrationAsync(workspaceGuid);
 
-            // Step 2: Get project ID from filter query
-            var projectId = await GetProjectIdFromFilterQueryAsync(integration);
+            // Step 2: Get project ID from parameter, filter query, or throw
+            var resolvedProjectId = await GetProjectIdAsync(integration, projectId);
 
             // Step 3: Resolve issue type name to ID
             var issueTypeId = await GetIssueTypeIdAsync(integration, issueTypeName);
@@ -76,7 +77,7 @@ public class JiraToolService : IJiraToolService
             // Step 4: Create the issue
             var issueKey = await CreateSingleIssueAsync(
                 integration,
-                projectId,
+                resolvedProjectId,
                 summary,
                 description,
                 issueTypeId);
@@ -972,7 +973,8 @@ public class JiraToolService : IJiraToolService
         string epicTitle,
         string epicDescription,
         List<StoryRequest> stories,
-        string storyTypeName = "Story")
+        string storyTypeName = "Story",
+        string? projectId = null)
     {
         try
         {
@@ -995,8 +997,8 @@ public class JiraToolService : IJiraToolService
             // Step 1: Load and validate integration
             var integration = await GetAndValidateIntegrationAsync(workspaceGuid);
 
-            // Step 2: Get project ID from filter query
-            var projectId = await GetProjectIdFromFilterQueryAsync(integration);
+            // Step 2: Get project ID from parameter, filter query, or throw
+            var resolvedProjectId = await GetProjectIdAsync(integration, projectId);
 
             // Step 3: Resolve issue type IDs
             var epicTypeId = await GetIssueTypeIdAsync(integration, "Epic");
@@ -1005,7 +1007,7 @@ public class JiraToolService : IJiraToolService
             // Step 4: Create the epic issue
             var epicKey = await CreateSingleIssueAsync(
                 integration,
-                projectId,
+                resolvedProjectId,
                 epicTitle,
                 epicDescription,
                 epicTypeId);
@@ -1026,7 +1028,7 @@ public class JiraToolService : IJiraToolService
                 {
                     var storyKey = await CreateSingleIssueAsync(
                         integration,
-                        projectId,
+                        resolvedProjectId,
                         story.Title,
                         story.Description,
                         storyTypeId,
@@ -1257,101 +1259,59 @@ public class JiraToolService : IJiraToolService
         return integration;
     }
 
-    private async Task<string> GetProjectIdFromFilterQueryAsync(
-        Integration integration, 
+    private async Task<string> GetProjectIdAsync(
+        Integration integration,
+        string? projectId,
         CancellationToken cancellationToken = default)
     {
-        try
+        // 1. If projectId is provided, use it
+        if (!string.IsNullOrWhiteSpace(projectId))
         {
-            using var client = GetHttpClient(integration);
-
-            // Build JQL query from FilterQuery (or use default if empty)
-            var query = HttpUtility.ParseQueryString(string.Empty);
-            var jql = !string.IsNullOrWhiteSpace(integration.FilterQuery) ? integration.FilterQuery : "ORDER BY updated DESC";
-            query["jql"] = jql;
-            query["fields"] = "project";
-            var requestUrl = $"/rest/api/3/search/jql?{query}";
-            
-            _logger.LogDebug(
-                "Fetching project ID from JIRA integration {IntegrationId} using JQL: {Jql}", 
-                integration.Id, 
-                jql);
-            
-            var response = await client.GetAsync(requestUrl, cancellationToken);
-
-            // Handle specific HTTP status codes
-            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-            {
-                _logger.LogError(
-                    "Failed to authenticate with JIRA for integration {IntegrationId}",
-                    integration.Id);
-                throw new InvalidOperationException(
-                    "Failed to authenticate with JIRA. Please verify the API key.");
-            }
-
-            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
-            {
-                var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError(
-                    "Invalid JQL query in FilterQuery for integration {IntegrationId}: {ErrorContent}",
-                    integration.Id,
-                    errorContent);
-                throw new ArgumentException(
-                    $"Invalid JQL query in integration FilterQuery. Please check the JQL syntax.");
-            }
-
-            if ((int)response.StatusCode >= 500)
-            {
-                _logger.LogError(
-                    "JIRA server error {StatusCode} fetching project information for integration {IntegrationId}",
-                    response.StatusCode,
-                    integration.Id);
-                throw new HttpRequestException(
-                    "JIRA server error occurred. Please try again later.");
-            }
-
-            response.EnsureSuccessStatusCode();
-
-            JiraSearchResponse? searchResponse;
-            try
-            {
-                searchResponse = await response.Content.ReadFromJsonAsync<JiraSearchResponse>();
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogError(ex,
-                    "Failed to deserialize JIRA search result for integration {IntegrationId}",
-                    integration.Id);
-                throw new InvalidOperationException(
-                    "Failed to parse JIRA API response when fetching project information.");
-            }
-            
-            var projectId = searchResponse?.Tickets?.FirstOrDefault()?.Fields?.Project?.Id;
-            
-            if (string.IsNullOrEmpty(projectId))
-            {
-                _logger.LogError(
-                    "No project found in FilterQuery results for integration {IntegrationId}", 
-                    integration.Id);
-                throw new InvalidOperationException(
-                    $"No project found in FilterQuery results for integration {integration.Id}. " +
-                    $"Ensure FilterQuery returns at least one issue.");
-            }
-            
-            _logger.LogDebug(
-                "Resolved project ID {ProjectId} for integration {IntegrationId}", 
-                projectId, 
-                integration.Id);
-            
+            _logger.LogDebug("Using provided projectId: {ProjectId}", projectId);
             return projectId;
         }
-        catch (HttpRequestException ex)
+
+        // 2. Try to extract project key from FilterQuery (JQL)
+        var filterQuery = integration.FilterQuery;
+        if (!string.IsNullOrWhiteSpace(filterQuery))
         {
-            _logger.LogError(ex, 
-                "Failed to fetch project ID from JIRA integration {IntegrationId}", 
-                integration.Id);
-            throw;
+            // Try to extract project key from JQL (e.g., project = KEY or project = "KEY")
+            var match = System.Text.RegularExpressions.Regex.Match(filterQuery, "project\\s*=\\s*['\"]?(\\w+)['\"]?", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match.Success && match.Groups.Count > 1)
+            {
+                var projectKey = match.Groups[1].Value;
+                _logger.LogDebug("Extracted project key from filter query: {ProjectKey}", projectKey);
+                // Resolve project key to project ID via JIRA API
+                var resolvedId = await GetProjectIdByKeyAsync(integration, projectKey, cancellationToken);
+                if (!string.IsNullOrEmpty(resolvedId))
+                {
+                    return resolvedId;
+                }
+            }
         }
+
+        // 3. If neither, throw
+        _logger.LogError("Project ID must be specified via parameter or filter query for integration {IntegrationId}", integration.Id);
+        throw new InvalidOperationException("Project ID must be specified via parameter or filter query.");
+    }
+
+    // Helper to resolve project key to project ID
+    private async Task<string?> GetProjectIdByKeyAsync(Integration integration, string projectKey, CancellationToken cancellationToken = default)
+    {
+        using var client = GetHttpClient(integration);
+        var requestUrl = $"/rest/api/3/project/{projectKey}";
+        var response = await client.GetAsync(requestUrl, cancellationToken);
+        if (response.IsSuccessStatusCode)
+        {
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("id", out var idProp))
+            {
+                return idProp.GetString();
+            }
+        }
+        _logger.LogError("Failed to resolve project key {ProjectKey} to project ID for integration {IntegrationId}", projectKey, integration.Id);
+        return null;
     }
 
     private async Task<string> GetIssueTypeIdAsync(

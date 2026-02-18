@@ -302,38 +302,49 @@ public class JiraTicketProvider : ITicketProvider
     /// Maps a Jira ticket to ExternalTicketDto with content conversion.
     /// </summary>
     private async Task<ExternalTicketDto> MapJiraTicketToDtoAsync(
-        JiraTicket jiraTicket, 
-        Integration integration, 
+        JiraTicket jiraTicket,
+        Integration integration,
         CancellationToken cancellationToken = default)
     {
         var statusName = jiraTicket.Fields?.Status?.Name ?? "Unknown";
+        int? statusCategoryId = jiraTicket.Fields?.Status?.StatusCategory?.Id;
         var priorityName = jiraTicket.Fields?.Priority?.Name ?? "Medium";
-        
-        var priorityValue = MapPriorityToValue(priorityName);
-        
+        var priorityId = jiraTicket.Fields?.Priority?.Id;
+
+        // Set priorityValue based on priorityId if possible, else fallback to name-based
+        int priorityValue = 2; // Default to medium
+        if (!string.IsNullOrEmpty(priorityId) && int.TryParse(priorityId, out var parsedValue))
+        {
+            priorityValue = parsedValue;
+        }
+        else
+        {
+            priorityValue = MapPriorityToValue(priorityName);
+        }
+
         var comments = await ConvertCommentsAsync(
-            jiraTicket.Fields?.Comment?.Comments, 
+            jiraTicket.Fields?.Comment?.Comments,
             integration.JiraType.GetValueOrDefault(),
             cancellationToken);
-        
+
         // Build external URL directly from integration base URL and ticket key
         var baseUrl = integration.Url?.TrimEnd('/') ?? string.Empty;
         var externalUrl = !string.IsNullOrEmpty(baseUrl) && !string.IsNullOrEmpty(jiraTicket.Key)
             ? $"{baseUrl}/browse/{jiraTicket.Key}"
             : string.Empty;
-        
+
         return new ExternalTicketDto(
             IntegrationId: integration.Id,
             ExternalTicketId: jiraTicket.Key ?? "UNKNOWN",
             Title: jiraTicket.Fields?.Summary ?? "Untitled",
             Description: await ExtractDescriptionTextAsync(
-                jiraTicket.Fields?.Description, 
+                jiraTicket.Fields?.Description,
                 integration.JiraType.GetValueOrDefault(),
                 cancellationToken),
             StatusName: statusName,
-            StatusColor: GetStatusColor(statusName),
+            StatusColor: GetStatusColor(statusCategoryId, statusName),
             PriorityName: priorityName,
-            PriorityColor: GetPriorityColor(priorityName),
+            PriorityColor: GetPriorityColor(priorityId, priorityName),
             PriorityValue: priorityValue,
             ExternalUrl: externalUrl,
             Comments: comments
@@ -426,35 +437,66 @@ public class JiraTicketProvider : ITicketProvider
         };
     }
 
-    private string GetStatusColor(string statusName)
+    // ID-based color mappings (up to 10 each)
+    private static readonly Dictionary<int, string> StatusCategoryIdColorMap = new()
     {
+        // Example: { 2, "bg-emerald-500/20 text-emerald-400" },
+        // Add up to 10 statusCategory IDs and their colors here
+        { 1, "bg-blue-500/20 text-blue-400" }, // New/To Do
+        { 2, "bg-yellow-500/20 text-yellow-400" }, // In Progress
+        { 3, "bg-emerald-500/20 text-emerald-400" }, // Done
+        { 4, "bg-purple-500/20 text-purple-400" },
+        { 5, "bg-red-500/20 text-red-400" },
+        { 6, "bg-orange-500/20 text-orange-400" },
+        { 7, "bg-slate-500/20 text-slate-400" },
+        { 8, "bg-pink-500/20 text-pink-400" },
+        { 9, "bg-cyan-500/20 text-cyan-400" },
+        { 10, "bg-lime-500/20 text-lime-400" }
+    };
+
+    private static readonly Dictionary<string, string> PriorityIdColorMap = new()
+    {
+        // Example: { "1", "bg-red-500/10 text-red-400 border border-red-500/20" },
+        // Add up to 10 priority IDs and their colors here
+        { "1", "bg-red-500/10 text-red-400 border border-red-500/20" },
+        { "2", "bg-orange-500/10 text-orange-400 border border-orange-500/20" },
+        { "3", "bg-blue-500/10 text-blue-400 border border-blue-500/20" },
+        { "4", "bg-slate-500/10 text-slate-400 border border-slate-500/20" },
+        { "5", "bg-green-500/10 text-green-400 border border-green-500/20" },
+        { "6", "bg-pink-500/10 text-pink-400 border border-pink-500/20" },
+        { "7", "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20" },
+        { "8", "bg-lime-500/10 text-lime-400 border border-lime-500/20" },
+        { "9", "bg-yellow-500/10 text-yellow-400 border border-yellow-500/20" },
+        { "10", "bg-purple-500/10 text-purple-400 border border-purple-500/20" }
+    };
+
+    private string GetStatusColor(int? statusCategoryId, string statusName)
+    {
+        if (statusCategoryId.HasValue && StatusCategoryIdColorMap.TryGetValue(statusCategoryId.Value, out var colorById))
+            return colorById;
+
         var lowerStatus = statusName.ToLowerInvariant();
-        
         if (lowerStatus.Contains("done") || lowerStatus.Contains("complete") || lowerStatus.Contains("closed"))
             return "bg-emerald-500/20 text-emerald-400";
-        
         if (lowerStatus.Contains("progress") || lowerStatus.Contains("review"))
             return "bg-yellow-500/20 text-yellow-400";
-        
         if (lowerStatus.Contains("todo") || lowerStatus.Contains("to do"))
             return "bg-purple-500/20 text-purple-400";
-        
         return "bg-blue-500/20 text-blue-400"; // Default for new/open
     }
 
-    private string GetPriorityColor(string priorityName)
+    private string GetPriorityColor(string? priorityId, string priorityName)
     {
+        if (!string.IsNullOrEmpty(priorityId) && PriorityIdColorMap.TryGetValue(priorityId, out var colorById))
+            return colorById;
+
         var lowerPriority = priorityName.ToLowerInvariant();
-        
         if (lowerPriority.Contains("highest") || lowerPriority.Contains("critical") || lowerPriority.Contains("blocker"))
             return "bg-red-500/10 text-red-400 border border-red-500/20";
-        
         if (lowerPriority.Contains("high"))
             return "bg-orange-500/10 text-orange-400 border border-orange-500/20";
-        
         if (lowerPriority.Contains("low") || lowerPriority.Contains("lowest") || lowerPriority.Contains("trivial"))
             return "bg-slate-500/10 text-slate-400 border border-slate-500/20";
-        
         return "bg-blue-500/10 text-blue-400 border border-blue-500/20"; // Default for medium
     }
 }
