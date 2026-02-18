@@ -1,36 +1,29 @@
-using Microsoft.Extensions.Logging;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
-using System.Web;
+using Microsoft.Extensions.Logging;
 using Orchestra.Application.Common.Exceptions;
 using Orchestra.Application.Common.Interfaces;
 using Orchestra.Domain.Entities;
 using Orchestra.Domain.Enums;
-using Orchestra.Domain.Interfaces;
+using Orchestra.Infrastructure.Integrations.Providers.Confluence;
 using Orchestra.Infrastructure.Tools.Models.Confluence;
+using ConfluenceApiContent = Orchestra.Infrastructure.Tools.Models.Confluence.ConfluenceContent;
 
 namespace Orchestra.Infrastructure.Tools.Services;
 
 public class ConfluenceToolService : IConfluenceToolService
 {
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly ICredentialEncryptionService _credentialEncryptionService;
+    private readonly ConfluenceApiClientFactory _confluenceApiClientFactory;
     private readonly IIntegrationDataAccess _integrationDataAccess;
     private readonly IAdfConversionService _adfConversionService;
     private readonly ILogger<ConfluenceToolService> _logger;
 
     public ConfluenceToolService(
-        IHttpClientFactory httpClientFactory,
-        ICredentialEncryptionService credentialEncryptionService,
+        ConfluenceApiClientFactory confluenceApiClientFactory,
         IIntegrationDataAccess integrationDataAccess,
         IAdfConversionService adfConversionService,
         ILogger<ConfluenceToolService> logger)
     {
-        _httpClientFactory = httpClientFactory;
-        _credentialEncryptionService = credentialEncryptionService;
+        _confluenceApiClientFactory = confluenceApiClientFactory;
         _integrationDataAccess = integrationDataAccess;
         _adfConversionService = adfConversionService;
         _logger = logger;
@@ -62,8 +55,19 @@ public class ConfluenceToolService : IConfluenceToolService
                 limit = 10;
             }
 
+            if (!Guid.TryParse(workspaceId, out var workspaceGuid))
+            {
+                return new
+                {
+                    success = false,
+                    error = $"Invalid GUID format for workspaceId: {workspaceId}",
+                    errorCode = "INVALID_WORKSPACE_ID"
+                };
+            }
+
             // Step 1: Load and validate integration
-            var integration = await GetAndValidateIntegrationAsync(Guid.Parse(workspaceId));
+            var integration = await GetAndValidateIntegrationAsync(workspaceGuid);
+            var apiClient = _confluenceApiClientFactory.CreateClient(integration);
 
             // Step 2: Split query into keywords and search for each
             var keywords = query.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
@@ -105,6 +109,7 @@ public class ConfluenceToolService : IConfluenceToolService
                 try
                 {
                     var keywordPages = await SearchByKeywordAsync(
+                        apiClient,
                         integration,
                         keyword,
                         excludeContentIds,
@@ -249,48 +254,18 @@ public class ConfluenceToolService : IConfluenceToolService
 
             // Step 1: Load and validate integration
             var integration = await GetAndValidateIntegrationAsync(workspaceGuid);
+            var apiClient = _confluenceApiClientFactory.CreateClient(integration);
 
             // Step 2: Fetch page content
-            using var client = GetHttpClient(integration);
-            var pageUrl = $"wiki/rest/api/content/{pageId}?expand=body.atlas_doc_format,version,space";
-
-            _logger.LogDebug("Fetching Confluence page: {PageUrl}", pageUrl);
-
-            var response = await client.GetAsync(pageUrl);
+            var page = await apiClient.GetPageAsync(pageId);
             
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError(
-                    "Failed to fetch Confluence page {PageId} with status {StatusCode}: {ErrorContent}",
-                    pageId,
-                    response.StatusCode,
-                    errorContent);
-
-                var errorCode = response.StatusCode switch
-                {
-                    System.Net.HttpStatusCode.NotFound => "PAGE_NOT_FOUND",
-                    System.Net.HttpStatusCode.Forbidden => "CONFLUENCE_FORBIDDEN",
-                    System.Net.HttpStatusCode.Unauthorized => "CONFLUENCE_AUTH_FAILED",
-                    _ => "CONFLUENCE_API_ERROR"
-                };
-
-                return new
-                {
-                    success = false,
-                    error = $"Confluence API returned status {response.StatusCode}",
-                    errorCode = errorCode
-                };
-            }
-
-            var page = await response.Content.ReadFromJsonAsync<ConfluencePageResponse>();
             if (page == null)
             {
                 return new
                 {
                     success = false,
-                    error = "Failed to parse Confluence page response",
-                    errorCode = "PARSE_ERROR"
+                    error = $"Confluence page {pageId} not found",
+                    errorCode = "PAGE_NOT_FOUND"
                 };
             }
 
@@ -298,17 +273,24 @@ public class ConfluenceToolService : IConfluenceToolService
             var markdownContent = "";
             if (page.Body?.AtlasDocFormat?.Value != null)
             {
-                var adfElement = page.Body.AtlasDocFormat.Value;
-                // Handle case where Value is a JSON string that needs parsing
-                if (adfElement.ValueKind == System.Text.Json.JsonValueKind.String)
+                var adfString = page.Body.AtlasDocFormat.Value;
+                if (!string.IsNullOrEmpty(adfString))
                 {
-                    var adfString = adfElement.GetString();
-                    if (!string.IsNullOrEmpty(adfString))
+                    // Parse ADF string to JsonElement if needed
+                    JsonElement adfElement;
+                    try
                     {
-                        adfElement = JsonSerializer.SerializeToElement(JsonSerializer.Deserialize<object>(adfString));
+                        var parsed = JsonSerializer.Deserialize<object>(adfString);
+                        adfElement = JsonSerializer.SerializeToElement(parsed);
                     }
+                    catch
+                    {
+                        // If it's already a JsonElement or raw string, try direct parsing
+                        adfElement = JsonSerializer.SerializeToElement(adfString);
+                    }
+                    
+                    markdownContent = await _adfConversionService.ConvertAdfToMarkdownAsync(adfElement, CancellationToken.None);
                 }
-                markdownContent = await _adfConversionService.ConvertAdfToMarkdownAsync(adfElement, CancellationToken.None);
             }
             else
             {
@@ -318,7 +300,9 @@ public class ConfluenceToolService : IConfluenceToolService
             }
 
             var baseUrl = integration.Url?.TrimEnd('/') ?? "";
-            var pageUrl_web = page.Links?.WebUi != null ? $"{baseUrl}{page.Links.WebUi}" : $"{baseUrl}/pages/{page.Id}";
+            var pageUrl = page.Links?.TryGetValue("webui", out var webui) == true 
+                ? $"{baseUrl}{webui}" 
+                : $"{baseUrl}/pages/{page.Id}";
 
             _logger.LogInformation(
                 "Successfully retrieved Confluence page {PageId} ('{Title}') from workspace {WorkspaceId}",
@@ -336,7 +320,7 @@ public class ConfluenceToolService : IConfluenceToolService
                     content = markdownContent,
                     spaceKey = page.Space?.Key ?? "",
                     spaceName = page.Space?.Name ?? "",
-                    url = pageUrl_web,
+                    url = pageUrl,
                     version = page.Version?.Number ?? 0,
                     status = page.Status
                 },
@@ -461,78 +445,34 @@ public class ConfluenceToolService : IConfluenceToolService
 
             // Step 1: Load and validate integration
             var integration = await GetAndValidateIntegrationAsync(workspaceGuid);
+            var apiClient = _confluenceApiClientFactory.CreateClient(integration);
 
             // Step 2: Convert markdown to ADF
             var adfJson = await _adfConversionService.ConvertMarkdownToAdfAsync(content, CancellationToken.None);
 
-            // Step 3: Prepare request
-            var createRequest = new CreateConfluencePageRequest
+            // Step 3: Prepare body object for API call
+            var bodyObject = new
             {
-                Type = "page",
-                Title = title,
-                Space = new CreateConfluenceSpace { Key = spaceKey },
-                Body = new ConfluenceBody
-                {
-                    AtlasDocFormat = new ConfluenceContent
-                    {
-                        Value = adfJson,
-                        Representation = "atlas_doc_format"
-                    }
-                }
+                atlas_doc_format = new { value = adfJson, representation = "atlas_doc_format" }
             };
 
-            // Add parent page if specified
-            if (!string.IsNullOrWhiteSpace(parentPageId))
-            {
-                createRequest.Ancestors = new List<ConfluenceAncestor>
-                {
-                    new ConfluenceAncestor { Id = parentPageId }
-                };
-            }
-
             // Step 4: Create the page
-            using var client = GetHttpClient(integration);
-            var response = await client.PostAsJsonAsync("wiki/rest/api/content", createRequest);
+            var createdPage = await apiClient.CreatePageAsync(spaceKey, title, bodyObject, parentPageId);
             
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError(
-                    "Failed to create Confluence page with status {StatusCode}: {ErrorContent}",
-                    response.StatusCode,
-                    errorContent);
-
-                var errorMessage = response.StatusCode switch
-                {
-                    System.Net.HttpStatusCode.BadRequest => "Invalid request data. Check space key, title, and content.",
-                    System.Net.HttpStatusCode.NotFound => "Space or parent page not found.",
-                    System.Net.HttpStatusCode.Forbidden => "No permission to create page in this space.",
-                    System.Net.HttpStatusCode.Unauthorized => "Authentication failed.",
-                    _ => $"Confluence API returned status {response.StatusCode}"
-                };
-
-                return new
-                {
-                    success = false,
-                    error = errorMessage,
-                    errorCode = "CONFLUENCE_CREATE_FAILED",
-                    details = errorContent
-                };
-            }
-
-            var createdPage = await response.Content.ReadFromJsonAsync<ConfluencePageCreateUpdateResponse>();
             if (createdPage == null)
             {
                 return new
                 {
                     success = false,
-                    error = "Failed to parse Confluence create page response",
-                    errorCode = "PARSE_ERROR"
+                    error = "Failed to create Confluence page",
+                    errorCode = "CONFLUENCE_CREATE_FAILED"
                 };
             }
 
             var baseUrl = integration.Url?.TrimEnd('/') ?? "";
-            var pageUrl = createdPage.Links?.WebUi != null ? $"{baseUrl}{createdPage.Links.WebUi}" : $"{baseUrl}/pages/{createdPage.Id}";
+            var pageUrl = createdPage.Links?.TryGetValue("webui", out var webui) == true 
+                ? $"{baseUrl}{webui}" 
+                : $"{baseUrl}/pages/{createdPage.Id}";
 
             _logger.LogInformation(
                 "Successfully created Confluence page {PageId} ('{Title}') in space {SpaceKey} for workspace {WorkspaceId}",
@@ -656,135 +596,57 @@ public class ConfluenceToolService : IConfluenceToolService
 
             // Step 1: Load and validate integration
             var integration = await GetAndValidateIntegrationAsync(workspaceGuid);
+            var apiClient = _confluenceApiClientFactory.CreateClient(integration);
 
             // Step 2: Get current page to retrieve version number (required by Confluence)
-            using var client = GetHttpClient(integration);
-            var currentPageUrl = $"wiki/rest/api/content/{pageId}?expand=version";
-            
-            _logger.LogDebug("Fetching current Confluence page version: {PageUrl}", currentPageUrl);
-            
-            var currentResponse = await client.GetAsync(currentPageUrl);
-            if (!currentResponse.IsSuccessStatusCode)
-            {
-                var errorContent = await currentResponse.Content.ReadAsStringAsync();
-                _logger.LogError(
-                    "Failed to fetch current page {PageId} with status {StatusCode}: {ErrorContent}",
-                    pageId,
-                    currentResponse.StatusCode,
-                    errorContent);
-
-                var errorCode = currentResponse.StatusCode switch
-                {
-                    System.Net.HttpStatusCode.NotFound => "PAGE_NOT_FOUND",
-                    System.Net.HttpStatusCode.Forbidden => "CONFLUENCE_FORBIDDEN",
-                    System.Net.HttpStatusCode.Unauthorized => "CONFLUENCE_AUTH_FAILED",
-                    _ => "CONFLUENCE_API_ERROR"
-                };
-
-                return new
-                {
-                    success = false,
-                    error = $"Failed to fetch current page: {currentResponse.StatusCode}",
-                    errorCode = errorCode
-                };
-            }
-
-            var currentPage = await currentResponse.Content.ReadFromJsonAsync<ConfluencePageResponse>();
-            if (currentPage == null || currentPage.Version == null)
+            var currentPage = await apiClient.GetPageAsync(pageId);
+            if (currentPage == null)
             {
                 return new
                 {
                     success = false,
-                    error = "Failed to parse current page or version not available",
-                    errorCode = "PARSE_ERROR"
+                    error = "Page not found",
+                    errorCode = "PAGE_NOT_FOUND"
                 };
             }
 
-            var currentVersion = currentPage.Version.Number;
-            var newVersion = currentVersion + 1;
+            var currentVersion = currentPage.Version?.Number ?? 0;
 
             _logger.LogDebug(
-                "Current page version: {CurrentVersion}, new version will be: {NewVersion}",
-                currentVersion,
-                newVersion);
+                "Current page version: {CurrentVersion}",
+                currentVersion);
 
-            // Step 3: Prepare update request
-            var updateRequest = new UpdateConfluencePageRequest
-            {
-                Type = "page",
-                Title = title ?? currentPage.Title,
-                Version = new ConfluenceVersionUpdate
-                {
-                    Number = newVersion,
-                    Message = "Updated via Orchestra"
-                }
-            };
-
-            // Convert markdown to ADF if content is provided
+            // Step 3: Prepare body object if content is provided
+            object? bodyObject = null;
             if (!string.IsNullOrWhiteSpace(content))
             {
                 var adfJson = await _adfConversionService.ConvertMarkdownToAdfAsync(content, CancellationToken.None);
-                updateRequest.Body = new ConfluenceBody
-                {
-                    AtlasDocFormat = new ConfluenceContent
-                    {
-                        Value = adfJson,
-                        Representation = "atlas_doc_format"
-                    }
-                };
+                bodyObject = new { atlas_doc_format = new { value = adfJson, representation = "atlas_doc_format" } };
             }
 
             // Step 4: Update the page
-            var updateUrl = $"wiki/rest/api/content/{pageId}";
-            var response = await client.PutAsJsonAsync(updateUrl, updateRequest);
+            var updatedPage = await apiClient.UpdatePageAsync(pageId, title, bodyObject, currentVersion);
             
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError(
-                    "Failed to update Confluence page {PageId} with status {StatusCode}: {ErrorContent}",
-                    pageId,
-                    response.StatusCode,
-                    errorContent);
-
-                var errorMessage = response.StatusCode switch
-                {
-                    System.Net.HttpStatusCode.BadRequest => "Invalid request data. Check title and content.",
-                    System.Net.HttpStatusCode.NotFound => "Page not found.",
-                    System.Net.HttpStatusCode.Conflict => "Page has been updated by someone else. Version conflict.",
-                    System.Net.HttpStatusCode.Forbidden => "No permission to update this page.",
-                    System.Net.HttpStatusCode.Unauthorized => "Authentication failed.",
-                    _ => $"Confluence API returned status {response.StatusCode}"
-                };
-
-                return new
-                {
-                    success = false,
-                    error = errorMessage,
-                    errorCode = "CONFLUENCE_UPDATE_FAILED",
-                    details = errorContent
-                };
-            }
-
-            var updatedPage = await response.Content.ReadFromJsonAsync<ConfluencePageCreateUpdateResponse>();
             if (updatedPage == null)
             {
                 return new
                 {
                     success = false,
-                    error = "Failed to parse Confluence update page response",
-                    errorCode = "PARSE_ERROR"
+                    error = "Failed to update Confluence page",
+                    errorCode = "CONFLUENCE_UPDATE_FAILED"
                 };
             }
 
             var baseUrl = integration.Url?.TrimEnd('/') ?? "";
-            var pageUrl = updatedPage.Links?.WebUi != null ? $"{baseUrl}{updatedPage.Links.WebUi}" : $"{baseUrl}/pages/{updatedPage.Id}";
+            var pageUrl = updatedPage.Links?.TryGetValue("webui", out var webui) == true 
+                ? $"{baseUrl}{webui}" 
+                : $"{baseUrl}/pages/{updatedPage.Id}";
 
             _logger.LogInformation(
                 "Successfully updated Confluence page {PageId} ('{Title}') to version {Version} for workspace {WorkspaceId}",
                 updatedPage.Id,
                 updatedPage.Title,
-                updatedPage.Version?.Number ?? newVersion,
+                updatedPage.Version?.Number ?? (currentVersion + 1),
                 workspaceId);
 
             return new
@@ -793,9 +655,9 @@ public class ConfluenceToolService : IConfluenceToolService
                 pageId = updatedPage.Id,
                 title = updatedPage.Title,
                 url = pageUrl,
-                version = updatedPage.Version?.Number ?? newVersion,
+                version = updatedPage.Version?.Number ?? (currentVersion + 1),
                 previousVersion = currentVersion,
-                message = $"Successfully updated page '{updatedPage.Title}' to version {newVersion}"
+                message = $"Successfully updated page '{updatedPage.Title}' to version {currentVersion + 1}"
             };
         }
         catch (IntegrationNotFoundException ex)
@@ -860,6 +722,7 @@ public class ConfluenceToolService : IConfluenceToolService
     #region Helper Methods
 
     private async Task<List<object>> SearchByKeywordAsync(
+        IConfluenceApiClient apiClient,
         Integration integration,
         string keyword,
         List<string> excludeContentIds,
@@ -867,166 +730,108 @@ public class ConfluenceToolService : IConfluenceToolService
     {
         var pages = new List<object>();
 
-        using var client = GetHttpClient(integration);
-        
-        // Build CQL query with keyword and exclusions
-        var cql = string.IsNullOrEmpty(integration.FilterQuery) 
-            ? $"text ~ {keyword}" 
-            : $"{integration.FilterQuery} AND text ~ {keyword}";
-
-        // Add exclusion clause if we have IDs to exclude
-        if (excludeContentIds.Count > 0)
+        try
         {
-            var excludeClause = $"id not in ({string.Join(", ", excludeContentIds)})";
-            cql = $"{cql} AND {excludeClause}";
-        }
+            // Build CQL query with keyword and exclusions
+            var cql = string.IsNullOrEmpty(integration.FilterQuery) 
+                ? $"text ~ {keyword}" 
+                : $"{integration.FilterQuery} AND text ~ {keyword}";
 
-        var encodedQuery = HttpUtility.ParseQueryString(string.Empty);
-        encodedQuery["cql"] = cql;
-        encodedQuery["limit"] = remainingLimit.ToString();
-        encodedQuery["type"] = "page";
-        var searchUrl = $"wiki/rest/api/content/search?{encodedQuery}";
-
-        _logger.LogDebug("Executing Confluence search: {SearchUrl}", searchUrl);
-
-        var response = await client.GetAsync(searchUrl);
-        
-        if (!response.IsSuccessStatusCode)
-        {
-            var errorContent = await response.Content.ReadAsStringAsync();
-            _logger.LogError(
-                "Confluence search failed for keyword '{Keyword}' with status {StatusCode}: {ErrorContent}",
-                keyword,
-                response.StatusCode,
-                errorContent);
-            
-            // Return empty list to continue with other keywords
-            return pages;
-        }
-
-        var searchResponse = await response.Content.ReadFromJsonAsync<ConfluenceSearchResponse>();
-        if (searchResponse == null || searchResponse.Results == null)
-        {
-            _logger.LogWarning("Failed to parse Confluence search response for keyword '{Keyword}'", keyword);
-            return pages;
-        }
-
-        _logger.LogDebug(
-            "Found {Count} Confluence pages for keyword '{Keyword}'",
-            searchResponse.Results.Count,
-            keyword);
-
-        // Fetch full content for each page and convert to markdown
-        foreach (var result in searchResponse.Results)
-        {
-            try
+            // Add exclusion clause if we have IDs to exclude
+            if (excludeContentIds.Count > 0)
             {
-                // Fetch full page content with ADF format
-                var pageUrl = $"wiki/rest/api/content/{result.Id}?expand=body.atlas_doc_format,version,space";
-                var pageResponse = await client.GetAsync(pageUrl);
-                
-                if (!pageResponse.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning(
-                        "Failed to fetch page {PageId}: {StatusCode}",
-                        result.Id,
-                        pageResponse.StatusCode);
-                    continue;
-                }
+                var excludeClause = $"id not in ({string.Join(", ", excludeContentIds)})";
+                cql = $"{cql} AND {excludeClause}";
+            }
 
-                var test = await pageResponse.Content.ReadAsStringAsync();
-                var page = JsonSerializer.Deserialize<ConfluencePageResponse>(test);
-                //var page = await pageResponse.Content.ReadFromJsonAsync<ConfluencePageResponse>();
-                if (page == null)
-                {
-                    _logger.LogWarning("Failed to parse page {PageId}", result.Id);
-                    continue;
-                }
+            _logger.LogDebug("Executing Confluence search with CQL: {CQL}", cql);
 
-                // Convert ADF to markdown
-                var markdownContent = "";
-                if (page.Body?.AtlasDocFormat?.Value != null)
+            var searchResponse = await apiClient.SearchPagesAsync(cql, remainingLimit);
+            
+            if (searchResponse?.Results == null || searchResponse.Results.Count == 0)
+            {
+                _logger.LogDebug("No results found for keyword '{Keyword}'", keyword);
+                return pages;
+            }
+
+            _logger.LogDebug(
+                "Found {Count} Confluence pages for keyword '{Keyword}'",
+                searchResponse.Results.Count,
+                keyword);
+
+            // Fetch full content for each page and convert to markdown
+            foreach (var result in searchResponse.Results)
+            {
+                try
                 {
-                    var adfElement = page.Body.AtlasDocFormat.Value;
-                    // Handle case where Value is a JSON string that needs parsing
-                    if (adfElement.ValueKind == System.Text.Json.JsonValueKind.String)
+                    // Fetch full page content with ADF format
+                    if (string.IsNullOrEmpty(result.Id))
                     {
-                        var adfString = adfElement.GetString();
+                        _logger.LogWarning("Search result has no ID");
+                        continue;
+                    }
+                    
+                    var page = await apiClient.GetPageAsync(result.Id);
+                    
+                    if (page == null)
+                    {
+                        _logger.LogWarning("Failed to fetch page {PageId}", result.Id);
+                        continue;
+                    }
+
+                    // Convert ADF to markdown
+                    var markdownContent = "";
+                    if (page.Body?.AtlasDocFormat?.Value != null)
+                    {
+                        var adfString = page.Body.AtlasDocFormat.Value;
                         if (!string.IsNullOrEmpty(adfString))
                         {
-                            adfElement = JsonSerializer.SerializeToElement(JsonSerializer.Deserialize<object>(adfString));
+                            try
+                            {
+                                var parsed = JsonSerializer.Deserialize<object>(adfString);
+                                var adfElement = JsonSerializer.SerializeToElement(parsed);
+                                markdownContent = await _adfConversionService.ConvertAdfToMarkdownAsync(adfElement, CancellationToken.None);
+                            }
+                            catch
+                            {
+                                _logger.LogWarning("Failed to parse ADF for page {PageId}", result.Id);
+                            }
                         }
                     }
-                    markdownContent = await _adfConversionService.ConvertAdfToMarkdownAsync(adfElement, CancellationToken.None);
+
+                    var baseUrl = integration.Url?.TrimEnd('/') ?? "";
+                    var pageUrl = page.Links?.TryGetValue("webui", out var webui) == true 
+                        ? $"{baseUrl}{webui}" 
+                        : $"{baseUrl}/pages/{page.Id}";
+
+                    pages.Add(new
+                    {
+                        id = page.Id,
+                        title = page.Title,
+                        content = markdownContent,
+                        spaceKey = page.Space?.Key ?? "",
+                        spaceName = page.Space?.Name ?? "",
+                        url = pageUrl,
+                        version = page.Version?.Number ?? 0
+                    });
                 }
-
-                var baseUrl = integration.Url?.TrimEnd('/') ?? "";
-                var pageUrl_web = page.Links?.WebUi != null ? $"{baseUrl}{page.Links.WebUi}" : $"{baseUrl}/pages/{page.Id}";
-
-                pages.Add(new
+                catch (Exception ex)
                 {
-                    id = page.Id,
-                    title = page.Title,
-                    content = markdownContent,
-                    spaceKey = page.Space?.Key ?? "",
-                    spaceName = page.Space?.Name ?? "",
-                    url = pageUrl_web,
-                    version = page.Version?.Number ?? 0
-                });
+                    _logger.LogError(ex,
+                        "Error processing search result for page {PageId}: {Message}",
+                        result.Id,
+                        ex.Message);
+                    // Continue with other pages
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex,
-                    "Error processing search result for page {PageId}: {Message}",
-                    result.Id,
-                    ex.Message);
-                // Continue with other pages
-            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during keyword search for '{Keyword}'", keyword);
+            // Return what we have so far
         }
 
         return pages;
-    }
-
-    private HttpClient GetHttpClient(Integration integration)
-    {
-        try
-        {
-            var client = _httpClientFactory.CreateClient();
-
-            if (string.IsNullOrEmpty(integration.Url))
-            {
-                throw new ArgumentException("Integration URL is required for Confluence API calls.", nameof(integration.Url));
-            }
-            
-            if (string.IsNullOrEmpty(integration.EncryptedApiKey))
-            {
-                throw new ArgumentException("Integration encrypted API key is required for Confluence API calls.", nameof(integration.EncryptedApiKey));
-            }
-            
-            client.BaseAddress = new Uri(integration.Url);
-            
-            // Decrypt API key (format: "email:apiToken" for Confluence Cloud)
-            var apiKey = _credentialEncryptionService.Decrypt(integration.EncryptedApiKey);
-            
-            // Set Basic Auth header
-            var authValue = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{integration.Username}:{apiKey}"));
-            client.DefaultRequestHeaders.Authorization = 
-                new AuthenticationHeaderValue("Basic", authValue);
-            
-            return client;
-        }
-        catch (UriFormatException ex)
-        {
-            _logger.LogError(ex, "Invalid URL format for Confluence integration '{IntegrationName}': '{Url}'", 
-                integration.Name, integration.Url);
-            throw new ArgumentException("Invalid integration URL format.", nameof(integration.Url), ex);
-        }
-        catch (Exception ex) when (ex is ArgumentException || ex is CryptographicException)
-        {
-            _logger.LogError(ex, "Failed to configure HttpClient for Confluence integration '{IntegrationName}'", 
-                integration.Name);
-            throw;
-        }
     }
 
     private async Task<Integration> GetAndValidateIntegrationAsync(

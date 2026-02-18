@@ -109,6 +109,9 @@ public static class Extensions
         builder.Services.AddScoped<JiraApiClientFactory>();
         builder.Services.AddScoped<IJiraTextContentConverter, JiraTextContentConverter>();
 
+        // Confluence API client abstraction for version support (Cloud v3, On-Premise v2)
+        builder.Services.AddScoped<Orchestra.Infrastructure.Integrations.Providers.Confluence.ConfluenceApiClientFactory>();
+
         // Ticket provider implementations
         builder.Services.AddScoped<JiraTicketProvider>();
 

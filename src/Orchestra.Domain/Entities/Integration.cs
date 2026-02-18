@@ -38,6 +38,7 @@ public class Integration
     public string? Icon { get; private set; }
     public ProviderType Provider { get; private set; }
     public JiraType? JiraType { get; private set; }
+    public ConfluenceType? ConfluenceType { get; private set; }
     public string? Url { get; private set; }
     public string? Username { get; private set; }
     public string? EncryptedApiKey { get; private set; }
@@ -65,7 +66,8 @@ public class Integration
         string? encryptedApiKey = null,
         string? filterQuery = null,
         bool vectorize = false,
-        JiraType? jiraType = null)
+        JiraType? jiraType = null,
+        ConfluenceType? confluenceType = null)
     {
         // Validate workspace ID
         if (workspaceId == Guid.Empty)
@@ -94,6 +96,7 @@ public class Integration
             FilterQuery = filterQuery,
             Vectorize = vectorize,
             JiraType = jiraType ?? Orchestra.Domain.Enums.JiraType.Cloud, // Default to Cloud
+            ConfluenceType = confluenceType ?? Orchestra.Domain.Enums.ConfluenceType.Cloud, // Default to Cloud
             Connected = true, // Default to connected
             CreatedAt = DateTime.UtcNow,
             IsActive = true
@@ -110,6 +113,7 @@ public class Integration
     /// <param name="username">The username for authentication (optional).</param>
     /// <param name="encryptedApiKey">The encrypted API key (optional, only updated if provided).</param>
     /// <param name="jiraType">The Jira instance type (optional, only updated if specified).</param>
+    /// <param name="confluenceType">The Confluence instance type (optional, only updated if specified).</param>
     /// <param name="connected">The connection status (optional, only updated if provided).</param>
     public void Update(
         string name,
@@ -120,6 +124,7 @@ public class Integration
         string? filterQuery = null,
         bool vectorize = false,
         JiraType? jiraType = null,
+        ConfluenceType? confluenceType = null,
         bool? connected = null)
     {
         // Validate and trim name
@@ -146,8 +151,10 @@ public class Integration
         {
             JiraType = jiraType;
         }
-        FilterQuery = filterQuery;
-        Vectorize = vectorize;
+        if (confluenceType.HasValue)
+        {
+            ConfluenceType = confluenceType;
+        }
         UpdatedAt = DateTime.UtcNow;
         
         // Only update API key if a new value is provided

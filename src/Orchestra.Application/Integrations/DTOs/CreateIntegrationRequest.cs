@@ -14,5 +14,6 @@ public record CreateIntegrationRequest(
     string? FilterQuery,
     bool Vectorize,
     string? JiraType = null,  // "Cloud" or "OnPremise", defaults to Cloud if not specified
+    string? ConfluenceType = null,  // "Cloud" or "OnPremise", defaults to Cloud if not specified
     bool? Connected = null  // Optional connection status (defaults to true via domain entity)
 );

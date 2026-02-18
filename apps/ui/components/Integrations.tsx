@@ -48,7 +48,8 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
     apiKey: '',
     filterQuery: '',
     vectorize: false,
-    jiraType: 'Cloud'
+    jiraType: 'Cloud',
+    confluenceType: 'Cloud'
   });
 
   const categories = [
@@ -115,16 +116,19 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
   const handleOpenModal = (integration?: Integration) => {
     if (integration) {
       setEditingId(integration.id);
+      // Fix provider assignment: use lowercased provider for dropdown compatibility
+      const provider = integration.provider ? integration.provider.toLowerCase() : 'custom';
       setFormState({
         name: integration.name,
         type: integration.type,
-        provider: integration.provider || 'custom',
+        provider,
         url: integration.url || '',
         username: integration.username || '',
         apiKey: '••••••••••••', // Masked for existing
         filterQuery: integration.filterQuery || '',
         vectorize: integration.vectorize || false,
-        jiraType: (integration as any).jiraType || 'Cloud'
+        jiraType: integration.jiraType || 'Cloud',
+        confluenceType: integration.confluenceType || 'Cloud'
       });
     } else {
       setEditingId(null);
@@ -137,7 +141,8 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
         apiKey: '',
         filterQuery: '',
         vectorize: false,
-        jiraType: 'Cloud'
+        jiraType: 'Cloud',
+        confluenceType: 'Cloud'
       });
     }
     setIsModalOpen(true);
@@ -216,6 +221,11 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
       // Include jiraType for Jira integrations
       if (formState.provider === 'jira') {
         testRequest.jiraType = formState.jiraType;
+      }
+      
+      // Include confluenceType for Confluence integrations
+      if (formState.provider === 'confluence') {
+        testRequest.confluenceType = formState.confluenceType;
       }
       
       await testIntegrationConnection(testRequest);
@@ -418,7 +428,8 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
                   />
               </div>
 
-              {formState.provider === 'jira' && (
+              {/* Always show dropdown for Jira/Confluence if provider matches */}
+              {(formState.provider === 'jira' || (editingId && formState.provider === 'jira')) && (
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold text-textMuted uppercase tracking-wider">Jira Instance Type</label>
                   <div className="relative">
@@ -436,6 +447,28 @@ const Integrations: React.FC<IntegrationsProps> = ({ workspaceId }) => {
                     {formState.jiraType === 'Cloud' 
                       ? 'For cloud.atlassian.net instances' 
                       : 'For self-hosted or data center instances'}
+                  </p>
+                </div>
+              )}
+
+              {(formState.provider === 'confluence' || (editingId && formState.provider === 'confluence')) && (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-textMuted uppercase tracking-wider">Confluence Instance Type</label>
+                  <div className="relative">
+                    <select 
+                      value={formState.confluenceType} 
+                      onChange={(e) => setFormState({...formState, confluenceType: e.target.value})}
+                      className="w-full bg-background border border-border rounded-lg pl-3 pr-10 py-2.5 text-sm text-text focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary appearance-none transition-all shadow-sm"
+                    >
+                      <option value="Cloud">Confluence Cloud</option>
+                      <option value="OnPremise">Confluence On-Premise</option>
+                    </select>
+                    <Globe className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-textMuted pointer-events-none" />
+                  </div>
+                  <p className="text-[10px] text-textMuted ml-1">
+                    {formState.confluenceType === 'Cloud' 
+                      ? 'Connects to Atlassian Cloud instance (https://[domain].atlassian.net)' 
+                      : 'Connects to self-hosted or Data Center instance'}
                   </p>
                 </div>
               )}

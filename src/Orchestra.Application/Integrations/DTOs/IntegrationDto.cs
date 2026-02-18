@@ -16,5 +16,7 @@ public record IntegrationDto(
     bool Connected,
     string? LastSync,  // Formatted as human-readable (e.g., "2 hours ago")
     string? FilterQuery,
-    bool Vectorize
+    bool Vectorize,
+    string? JiraType = null,
+    string? ConfluenceType = null
 );

@@ -8,5 +8,6 @@ public record ValidateIntegrationConnectionRequest(
     string Url,
     string? Username,
     string ApiKey,
-    string? JiraType = null  // "Cloud" or "OnPremise" for Jira integrations
+    string? JiraType = null,  // "Cloud" or "OnPremise" for Jira integrations
+    string? ConfluenceType = null  // "Cloud" or "OnPremise" for Confluence integrations
 );
