@@ -1,0 +1,12 @@
+global using Xunit;
+global using NSubstitute;
+global using NSubstitute.ReturnsExtensions;
+global using Orchestra.Application;
+global using Orchestra.Application.Common.Interfaces;
+global using Orchestra.Application.Auth.DTOs;
+global using Orchestra.Application.Agents.DTOs;
+global using Orchestra.Application.Tickets.DTOs;
+global using Orchestra.Application.Integrations.DTOs;
+global using Orchestra.Domain;
+global using Orchestra.Domain.Entities;
+global using Orchestra.Domain.Enums;

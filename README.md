@@ -8,9 +8,21 @@
 
 ---
 
+
 ## 🚀 Why Orchestra?
 
 Development shouldn't be about passive tracking; it should be about active orchestration. We built **Orchestra** to be your **A.S.A.P.**—an **A**I **S**DLC **A**utomation **P**latform that bridges the gap between issue creation and code deployment.
+
+---
+
+## The Problem: AI Fragmentation in the SDLC
+
+In the fast-evolving world of AI, every team is trying to integrate intelligence into their processes. The Software Development Life Cycle (SDLC) is no exception.
+
+However, configuring AI capabilities across different systems—such as **Jira, Confluence, GitHub, Azure DevOps, etc.**—forces teams to duplicate work in different ways for different platforms. Furthermore, AI features are often inconsistent between these systems; the "AI" in your issue tracker might behave completely differently than the "AI" in your documentation tool.
+
+### The Solution
+Orchestra solves this by providing a **unified control plane**. It allows you to set up AI functionality for all your different systems in a single place. By centralizing the configuration of agents, tools, and access, you ensure consistent AI behavior across your entire development stack without managing a dozen different settings pages.
 
 ### 🎼 The Composition (How it works)
 
@@ -24,12 +36,13 @@ Development shouldn't be about passive tracking; it should be about active orche
 ## ✨ Key Features
 
 - **Unified Connectivity:** Stop tab-switching. View tickets from every tracker in one place.
+- **Jira Integration:** Full support for **Jira Cloud and On-Premise** instances with real-time synchronization.
 - **Agent Assignment:** "Hire" an AI agent for a specific ticket type (e.g., *The Bug Fixer*, *The Documentation Writer*).
 - **Smart Workflows:** Trigger agent actions automatically when a ticket status changes.
 - **A.S.A.P. Execution:** Reduce cycle time from days to minutes with background execution workers.
 - **Tool Management System:** Equip agents with the specific tools they need (e.g., Jira API, Git access).
 - **Real-Time Feedback:** Watch agents work in real-time via SignalR updates.
-- **Jira Integration:** Full two-way conversion of content using a specialized ADF (Atlassian Document Format) generator.
+- **ADF Generator:** Full two-way conversion of content using a specialized Atlassian Document Format (ADF) generator for Jira.
 
 ---
 
@@ -48,7 +61,7 @@ Orchestra connects several microservices using **.NET Aspire**:
 
 ## 🛠️ Tech Stack
 
-- **Framework:** .NET 10 (Preview), .NET Aspire 13.1 (Preview)
+- **Framework:** .NET 10, .NET Aspire 13.1
 - **Frontend:** React 19, Vite, TypeScript, Tailwind, React Flow, Recharts
 - **Database:** PostgreSQL (with Entity Framework Core)
 - **AI:** Microsoft Agents Framework, Azure OpenAI
@@ -78,7 +91,7 @@ Have ideas? [Open an issue](https://github.com/arturhaikou/orchestra/issues) or 
 
 ### Prerequisites
 
-*   **[.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)** (Preview)
+*   **[.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)**
 *   **[.NET Aspire](https://aspire.dev)** workload
 *   **[Docker](https://www.docker.com/) or [Podman](https://podman.io/)** (Required for Aspire & PostgreSQL containers)
 *   **[Node.js](https://nodejs.org/)** (v22+)
@@ -88,7 +101,7 @@ Have ideas? [Open an issue](https://github.com/arturhaikou/orchestra/issues) or 
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/your-org/orchestra.git
+    git clone https://github.com/arturhaikou/orchestra.git
     cd orchestra
     ```
 
@@ -114,3 +127,17 @@ Have ideas? [Open an issue](https://github.com/arturhaikou/orchestra/issues) or 
     > `Endpoint={your-endpoint};Key={your-key}`
 
     From there, you can view logs, traces, and click the endpoint link for the **ui** project to access the Orchestra application.
+
+## UI
+
+### Create Integrations
+<img width="1456" height="932" alt="image" src="https://github.com/user-attachments/assets/44dce0dc-8cbd-4b06-8d1e-e742a7c47a86" />
+
+### View tickets
+<img width="1314" height="443" alt="image" src="https://github.com/user-attachments/assets/dccade8b-3c4f-4bd4-ac8c-8d0735be28e2" />
+
+### Create specific agent
+<img width="1028" height="863" alt="image" src="https://github.com/user-attachments/assets/7b8f313d-e873-4f14-bf45-9840fef74d50" />
+
+
+
